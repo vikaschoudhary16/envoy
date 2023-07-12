@@ -1,5 +1,6 @@
 syntax = "proto3";
 
+import "envoy/config/core/v3/address.proto";
 package envoy.extensions.http.original_ip_detection.xff.v3;
 
 import "udpa/annotations/status.proto";
@@ -23,4 +24,9 @@ message XffConfig {
   // is not specified. See the documentation for
   // :ref:`config_http_conn_man_headers_x-forwarded-for` for more information.
   uint32 xff_num_trusted_hops = 1;
+
+  // List of CIDR ranges to validate the detected original IP against. If unset,
+  // any IP is allowed which gets detected as per xff_num_trusted_hops and
+  // :ref:`config_http_conn_man_headers_x-forwarded-for` configuration.
+  repeated config.core.v3.CidrRange trusted_cidrs = 2;
 }
