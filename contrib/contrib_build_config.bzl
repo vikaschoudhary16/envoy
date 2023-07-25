@@ -9,6 +9,7 @@ CONTRIB_EXTENSIONS = {
     "envoy.filters.http.language":                              "//contrib/language/filters/http/source:config_lib",
     "envoy.filters.http.squash":                                "//contrib/squash/filters/http/source:config",
     "envoy.filters.http.sxg":                                   "//contrib/sxg/filters/http/source:config",
+    "envoy.filters.http.http_wasm": "//contrib/http_wasm/filters/http/source:config",
 
     #
     # Network filters
@@ -78,4 +79,9 @@ CONTRIB_EXTENSIONS = {
     #
 
     "envoy.router.cluster_specifier_plugin.golang":             "//contrib/golang/router/cluster_specifier/source:config",
+
+    #
+    # WebAssembly runtimes
+    #
+    "envoy.wasm.runtime.http_wasm_v8": "//contrib/http_wasm/filters/http/source/wasm_runtime/v8:config",
 }

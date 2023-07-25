@@ -74,6 +74,7 @@ envoy_cc_extension(
         "//source/extensions:__subpackages__",
         "//test/extensions:__subpackages__",
         "//test/test_common:__subpackages__",
+	"@envoy//contrib/http_wasm/filters/http/source:__pkg__",
     ],
     deps = [
         ":wasm_hdr",
