@@ -23,9 +23,9 @@ FilterConfig::FilterConfig(const envoy::extensions::filters::http::http_wasm::v3
     });
   };
 
-  if (!createWasm(plugin, context.scope().createScope(""), context.clusterManager(),
-                  context.initManager(), context.mainThreadDispatcher(), context.api(),
-                  context.lifecycleNotifier(), remote_data_provider_, std::move(callback))) {
+  if (!createVm(plugin, context.scope().createScope(""), context.clusterManager(),
+                context.mainThreadDispatcher(), context.api(), context.lifecycleNotifier(),
+                std::move(callback))) {
     throw WasmException(
         fmt::format("Unable to create Wasm(http-wasm) HTTP filter {}", plugin->name_));
   }

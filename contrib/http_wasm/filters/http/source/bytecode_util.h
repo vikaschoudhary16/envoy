@@ -4,13 +4,12 @@
 #include <vector>
 #include <unordered_map>
 
-#include "contrib/http_wasm/filters/http/source/host/vm_runtime.h"
+#include "contrib/http_wasm/filters/http/source/vm_runtime.h"
 
 namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-namespace Host {
 
 // Utilitiy functions which directly operate on Wasm bytecodes.
 class BytecodeUtil {
@@ -54,7 +53,6 @@ public:
 private:
   static bool parseVarint(const char*& pos, const char* end, uint32_t& ret);
 };
-} // namespace Host
 } // namespace HttpWasm
 } // namespace HttpFilters
 } // namespace Extensions

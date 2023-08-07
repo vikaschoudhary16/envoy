@@ -14,12 +14,13 @@
 
 #include "source/common/common/assert.h"
 #include "source/common/common/logger.h"
-#include "source/extensions/filters/common/expr/cel_state.h"
-#include "source/extensions/filters/common/expr/evaluator.h"
+//#include "source/extensions/filters/common/expr/evaluator.h"
 
-#include "eval/public/activation.h"
+//#include "eval/public/activation.h"
 
-#include "contrib/http_wasm/filters/http/source/host/vm.h"
+#include "contrib/http_wasm/filters/http/source/vm.h"
+#include "contrib/http_wasm/filters/http/source/vm_runtime.h"
+#include "contrib/http_wasm/filters/http/source/http_wasm_common.h"
 #include "contrib/http_wasm/filters/http/source/plugin.h"
 
 namespace Envoy {
@@ -27,44 +28,31 @@ namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
 
-using Host::BufferInterface;
-using Host::ContextBase;
-using Host::PluginBase;
-using Host::PluginHandleBase;
-using Host::WasmBase;
-using Host::WasmBufferType;
-using Host::WasmHandleBase;
-using Host::WasmHeaderMapType;
-using Host::WasmResult;
-using Host::WasmStreamType;
-
 using VmConfig = envoy::extensions::wasm::v3::VmConfig;
 using CapabilityRestrictionConfig = envoy::extensions::wasm::v3::CapabilityRestrictionConfig;
 
 class PluginHandle;
+class Plugin;
 class Wasm;
+class WasmHandle;
 
-using PluginBaseSharedPtr = std::shared_ptr<PluginBase>;
-using PluginHandleBaseSharedPtr = std::shared_ptr<PluginHandleBase>;
+using PluginSharedPtr = std::shared_ptr<Plugin>;
 using PluginHandleSharedPtr = std::shared_ptr<PluginHandle>;
-using WasmHandleBaseSharedPtr = std::shared_ptr<WasmHandleBase>;
+using WasmHandleSharedPtr = std::shared_ptr<WasmHandle>;
 
-class Buffer : public Host::BufferBase {
+class Buffer {
 public:
   Buffer() = default;
 
-  // Host::BufferInterface
-  size_t size() const override;
-  int64_t copyTo(void* ptr, uint64_t size) override;
-  WasmResult copyFrom(size_t start, std::string_view data, size_t length) override;
+  size_t size() const;
+  int64_t copyTo(void* ptr, uint64_t size);
+  WasmResult copyFrom(size_t start, std::string_view data, size_t length);
 
-  // Host::BufferBase
-  void clear() override {
-    Host::BufferBase::clear();
+  void clear() {
     const_buffer_instance_ = nullptr;
     buffer_instance_ = nullptr;
   }
-  Buffer* set(std::string_view data) { return static_cast<Buffer*>(Host::BufferBase::set(data)); }
+  Buffer* set(std::string_view data);
 
   Buffer* set(::Envoy::Buffer::Instance* buffer_instance) {
     clear();
@@ -86,27 +74,40 @@ private:
 
 // A context which will be the target of callbacks for a particular session
 // e.g. a handler of a stream.
-class Context : public Host::ContextBase,
-                public Logger::Loggable<Logger::Id::wasm>,
-                public AccessLog::Instance,
+class Context : public Logger::Loggable<Logger::Id::wasm>,
                 public Http::StreamFilter,
-                public Filters::Common::Expr::StreamActivation,
                 public std::enable_shared_from_this<Context> {
 public:
-  Context();                                          // Testing.
+  Context() = default;                                // Testing.
   Context(Wasm* wasm);                                // Vm Context.
   Context(Wasm* wasm, const PluginSharedPtr& plugin); // Root Context.
   Context(Wasm* wasm, uint32_t root_context_id,
           PluginHandleSharedPtr plugin_handle); // Stream context.
-  ~Context() = default;
+  ~Context() override;
 
-  Wasm* wasm() const;
-  Plugin* plugin() const;
-  Context* rootContext() const;
+  Wasm* wasm() const { return wasm_; }
+  // virtual void maybeAddContentLength(uint64_t content_length);
+  uint32_t id() const { return id_; }
+  // Root Contexts have the VM Context as a parent.
+  bool isRootContext() const { return parent_context_id_ == 0; }
+  Context* parent_context() const { return parent_context_; }
+  Context* root_context() const {
+    const Context* previous = this;
+    Context* parent = parent_context_;
+    while (parent != previous) {
+      previous = parent;
+      parent = parent->parent_context_;
+    }
+    return parent;
+  }
+  std::string_view log_prefix() const {
+    return isRootContext() ? root_log_prefix_ : plugin_->log_prefix();
+  }
   Upstream::ClusterManager& clusterManager() const;
-  void maybeAddContentLength(uint64_t content_length) override;
+  void maybeAddContentLength(uint64_t content_length);
+  Runtime* wasmVm() const;
 
-  void error(std::string_view message) override;
+  void error(std::string_view message);
 
   // Retrieves the stream info associated with the request (a.k.a active stream).
   // It selects a value based on the following order: encoder callback, decoder
@@ -116,14 +117,7 @@ public:
   const StreamInfo::StreamInfo* getConstRequestStreamInfo() const;
   StreamInfo::StreamInfo* getRequestStreamInfo() const;
 
-  // AccessLog::Instance
-  void log(const Http::RequestHeaderMap* request_headers,
-           const Http::ResponseHeaderMap* response_headers,
-           const Http::ResponseTrailerMap* response_trailers,
-           const StreamInfo::StreamInfo& stream_info,
-           AccessLog::AccessLogType access_log_type) override;
-
-  uint32_t getLogLevel() override;
+  uint32_t getLogLevel();
 
   void onDestroy() override;
 
@@ -144,28 +138,60 @@ public:
   Http::FilterMetadataStatus encodeMetadata(Http::MetadataMap& metadata_map) override;
   void setEncoderFilterCallbacks(Envoy::Http::StreamEncoderFilterCallbacks& callbacks) override;
 
-  // VM calls out to host.
-  // Host::ContextBase
+  FilterHeadersStatus onRequestHeaders(uint32_t headers, bool end_of_stream);
+  FilterDataStatus onRequestBody(uint32_t body_length, bool end_of_stream);
+  FilterTrailersStatus onRequestTrailers(uint32_t trailers);
+  FilterMetadataStatus onRequestMetadata(uint32_t elements);
+  FilterHeadersStatus onResponseHeaders(uint32_t headers, bool end_of_stream);
+  FilterDataStatus onResponseBody(uint32_t body_length, bool end_of_stream);
+  FilterTrailersStatus onResponseTrailers(uint32_t trailers);
+  FilterMetadataStatus onResponseMetadata(uint32_t elements);
+
+  WasmResult unimplemented() {
+    error("unimplemented http-wasm API");
+    return WasmResult::Unimplemented;
+  }
+  bool isFailed();
 
   // General
-  WasmResult log(uint32_t level, std::string_view message) override;
-  std::string_view getConfiguration() override;
-  void sendLocalResponse(uint32_t response_code) override;
+  WasmResult log(uint32_t level, std::string_view message);
+  std::string_view getConfiguration();
+  void sendLocalResponse(uint32_t response_code);
 
   // Header/Trailer/Metadata Maps
   WasmResult addHeaderMapValue(WasmHeaderMapType type, std::string_view key,
-                               std::string_view value) override;
+                               std::string_view value);
   WasmResult getHeaderMapValue(WasmHeaderMapType type, std::string_view key,
-                               std::string_view* value) override;
+                               std::string_view* value);
 
-  WasmResult removeHeaderMapValue(WasmHeaderMapType type, std::string_view key) override;
+  WasmResult removeHeaderMapValue(WasmHeaderMapType type, std::string_view key);
   WasmResult replaceHeaderMapValue(WasmHeaderMapType type, std::string_view key,
-                                   std::string_view value) override;
+                                   std::string_view value);
 
-  WasmResult getHeaderMapSize(WasmHeaderMapType type, uint32_t* size) override;
+  WasmResult getHeaderMapSize(WasmHeaderMapType type, uint32_t* size);
 
   // Buffer
-  BufferInterface* getBuffer(WasmBufferType type) override;
+  Buffer* getBuffer(WasmBufferType type);
+  // Actions to be done after the call into the VM returns.
+  std::deque<std::function<void()>> after_vm_call_actions_;
+  void addAfterVmCallAction(std::function<void()> f) { after_vm_call_actions_.push_back(f); }
+  void doAfterVmCallActions() {
+    if (!after_vm_call_actions_.empty()) {
+      while (!after_vm_call_actions_.empty()) {
+        auto f = std::move(after_vm_call_actions_.front());
+        after_vm_call_actions_.pop_front();
+        f();
+      }
+    }
+  }
+  uint64_t getCurrentTimeNanoseconds() {
+    unimplemented();
+    return 0;
+  }
+  uint64_t getMonotonicTimeNanoseconds() {
+    unimplemented();
+    return 0;
+  }
 
 protected:
   friend class Wasm;
@@ -194,8 +220,36 @@ protected:
   bool buffering_request_body_ = false;
   bool buffering_response_body_ = false;
   bool end_of_stream_ = false;
+
+  std::string makeRootLogPrefix(std::string_view vm_id) const;
+  Wasm* wasm_{nullptr};
+  uint32_t id_{0};
+  uint32_t parent_context_id_{0};    // 0 for roots and the general context.
+  std::string root_id_;              // set only in root context.
+  Context* parent_context_{nullptr}; // set in all contexts.
+  std::string root_log_prefix_;      // set only in root context.
+  std::shared_ptr<Plugin> plugin_;   // set in root and stream contexts.
+  bool in_vm_context_created_ = false;
+  bool destroyed_ = false;
+  bool stream_failed_ = false; // Set true after failStream is called in case of VM failure.
+
+private:
+  // helper functions
+  FilterHeadersStatus convertVmCallResultToFilterHeadersStatus(uint64_t result);
+  FilterDataStatus convertVmCallResultToFilterDataStatus(uint64_t result);
+  FilterTrailersStatus convertVmCallResultToFilterTrailersStatus(uint64_t result);
+  FilterMetadataStatus convertVmCallResultToFilterMetadataStatus(uint64_t result);
 };
 using ContextSharedPtr = std::shared_ptr<Context>;
+
+class DeferAfterCallActions {
+public:
+  DeferAfterCallActions(Context* context) : context_(context) {}
+  ~DeferAfterCallActions();
+
+private:
+  Context* const context_;
+};
 
 } // namespace HttpWasm
 } // namespace HttpFilters

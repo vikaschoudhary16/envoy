@@ -1,5 +1,5 @@
 
-#include "contrib/http_wasm/filters/http/source/host/bytecode_util.h"
+#include "contrib/http_wasm/filters/http/source/bytecode_util.h"
 
 #if !defined(_MSC_VER)
 #include <cxxabi.h>
@@ -11,7 +11,6 @@ namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-namespace Host {
 
 bool BytecodeUtil::checkWasmHeader(std::string_view bytecode) {
   // Wasm file header is 8 bytes (magic number + version).
@@ -197,7 +196,6 @@ bool BytecodeUtil::parseVarint(const char*& pos, const char* end, uint32_t& ret)
   return false;
 }
 
-} // namespace Host
 } // namespace HttpWasm
 } // namespace HttpFilters
 } // namespace Extensions

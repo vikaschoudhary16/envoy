@@ -1,5 +1,4 @@
 #include "contrib/http_wasm/filters/http/source/context.h"
-#include "contrib/http_wasm/filters/http/source/context.h"
 #include "contrib/http_wasm/filters/http/source/vm.h"
 
 #include <algorithm>
@@ -37,35 +36,32 @@
 #include "absl/container/node_hash_map.h"
 #include "absl/strings/str_cat.h"
 #include "absl/synchronization/mutex.h"
-#include "eval/public/cel_value.h"
-#include "eval/public/containers/field_access.h"
-#include "eval/public/containers/field_backed_list_impl.h"
-#include "eval/public/containers/field_backed_map_impl.h"
-#include "eval/public/structs/cel_proto_wrapper.h"
-#include "include/proxy-wasm/pairs_util.h"
 #include "openssl/bytestring.h"
 #include "openssl/hmac.h"
 #include "openssl/sha.h"
+
+#define CHECK_FAIL(_stream_type, _stream_type2, _return_open, _return_closed)                      \
+  if (isFailed()) {                                                                                \
+    if (plugin_->fail_open_) {                                                                     \
+      return _return_open;                                                                         \
+    }                                                                                              \
+    return _return_closed;                                                                         \
+  }
+
+#define CHECK_FAIL_HTTP(_return_open, _return_closed)                                              \
+  CHECK_FAIL(WasmStreamType::Request, WasmStreamType::Response, _return_open, _return_closed)
 
 namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-using Host::DeferAfterCallActions;
-using Host::LogLevel;
-using Host::Word;
+// using Host::DeferAfterCallActions;
+// using Host::LogLevel;
+// using Host::Word;
 
 namespace {
-
-// FilterState prefix for CelState values.
-constexpr absl::string_view CelStateKeyPrefix = "httpwasm.";
-
 using HashPolicy = envoy::config::route::v3::RouteAction::HashPolicy;
-using CelState = Filters::Common::Expr::CelState;
-using CelStatePrototype = Filters::Common::Expr::CelStatePrototype;
-
 template <typename P> static uint32_t headerSize(const P& p) { return p ? p->size() : 0; }
-
 Upstream::HostDescriptionConstSharedPtr getHost(const StreamInfo::StreamInfo* info) {
   if (info && info->upstreamInfo() && info->upstreamInfo().value().get().upstreamHost()) {
     return info->upstreamInfo().value().get().upstreamHost();
@@ -79,8 +75,9 @@ size_t Buffer::size() const {
   if (const_buffer_instance_) {
     return const_buffer_instance_->length();
   }
-  return Host::BufferBase::size();
+  return 0;
 }
+DeferAfterCallActions::~DeferAfterCallActions() { context_->doAfterVmCallActions(); }
 
 int64_t Buffer::copyTo(void* ptr, uint64_t dest_size) {
   // if dest_size is 0, do not copy, spec says panic
@@ -107,17 +104,30 @@ WasmResult Buffer::copyFrom(size_t start, std::string_view data, size_t length) 
   }
 }
 
-Context::Context() = default;
-Context::Context(Wasm* wasm) : ContextBase(wasm) {}
-Context::Context(Wasm* wasm, const PluginSharedPtr& plugin) : ContextBase(wasm, plugin) {
-  root_local_info_ = &std::static_pointer_cast<Plugin>(plugin)->localInfo();
+// Context::Context() = default;
+Context::Context(Wasm* wasm) : wasm_(wasm), parent_context_(this) { wasm_->contexts_[id_] = this; }
+Context::Context(Wasm* wasm, const PluginSharedPtr& plugin)
+    : wasm_(wasm), id_(wasm->allocContextId()), parent_context_(this), root_id_(plugin->root_id_),
+      root_log_prefix_(makeRootLogPrefix(plugin->vm_id_)), plugin_(plugin) {
+  current_context_ = this;
+  root_local_info_ = &plugin->localInfo();
+  wasm_->contexts_[id_] = this;
 }
 Context::Context(Wasm* wasm, uint32_t root_context_id, PluginHandleSharedPtr plugin_handle)
-    : ContextBase(wasm, root_context_id, plugin_handle), plugin_handle_(plugin_handle) {}
+    : wasm_(wasm), id_(wasm != nullptr ? wasm->allocContextId() : 0),
+      parent_context_id_(parent_context_id_), plugin_(plugin_handle->plugin()),
+      plugin_handle_(plugin_handle) {
+  if (wasm_ != nullptr) {
+    wasm_->contexts_[id_] = this;
+    parent_context_ = wasm_->contexts_[parent_context_id_];
+  }
+}
 
-Wasm* Context::wasm() const { return static_cast<Wasm*>(wasm_); }
-Plugin* Context::plugin() const { return static_cast<Plugin*>(plugin_.get()); }
-Context* Context::rootContext() const { return static_cast<Context*>(root_context()); }
+bool Context::isFailed() { return (wasm_ == nullptr || wasm_->isFailed()); }
+
+Runtime* Context::wasmVm() const { return wasm_->wasm_vm(); }
+// Plugin* Context::plugin() const { return static_cast<Plugin*>(plugin_.get()); }
+// Context* Context::rootContext() const { return static_cast<Context*>(root_context()); }
 Upstream::ClusterManager& Context::clusterManager() const { return wasm()->clusterManager(); }
 
 void Context::error(std::string_view message) { ENVOY_LOG(trace, message); }
@@ -236,9 +246,20 @@ WasmResult Context::getHeaderMapSize(WasmHeaderMapType type, uint32_t* result) {
   return WasmResult::Ok;
 }
 
+std::string Context::makeRootLogPrefix(std::string_view vm_id) const {
+  std::string prefix;
+  if (!root_id_.empty()) {
+    prefix = prefix + " " + std::string(root_id_);
+  }
+  if (!vm_id.empty()) {
+    prefix = prefix + " " + std::string(vm_id);
+  }
+  return prefix;
+}
+
 // Buffer
 
-BufferInterface* Context::getBuffer(WasmBufferType type) {
+Buffer* Context::getBuffer(WasmBufferType type) {
   switch (type) {
   case WasmBufferType::HttpRequestBody:
     return buffer_.set(request_body_buffer_);
@@ -289,78 +310,57 @@ uint32_t Context::getLogLevel() {
 
 std::string_view Context::getConfiguration() { return plugin_->plugin_configuration_; };
 
-Http::FilterHeadersStatus convertFilterHeadersStatus(Host::FilterHeadersStatus status) {
+Http::FilterHeadersStatus convertFilterHeadersStatus(FilterHeadersStatus status) {
   switch (status) {
   default:
-  case Host::FilterHeadersStatus::Continue:
+  case FilterHeadersStatus::Continue:
     return Http::FilterHeadersStatus::Continue;
-  case Host::FilterHeadersStatus::StopIteration:
+  case FilterHeadersStatus::StopIteration:
     return Http::FilterHeadersStatus::StopIteration;
-  case Host::FilterHeadersStatus::StopAllIterationAndBuffer:
+  case FilterHeadersStatus::StopAllIterationAndBuffer:
     return Http::FilterHeadersStatus::StopAllIterationAndBuffer;
-  case Host::FilterHeadersStatus::StopAllIterationAndWatermark:
+  case FilterHeadersStatus::StopAllIterationAndWatermark:
     return Http::FilterHeadersStatus::StopAllIterationAndWatermark;
   }
 };
 
-Http::FilterTrailersStatus convertFilterTrailersStatus(Host::FilterTrailersStatus status) {
+Http::FilterTrailersStatus convertFilterTrailersStatus(FilterTrailersStatus status) {
   switch (status) {
   default:
-  case Host::FilterTrailersStatus::Continue:
+  case FilterTrailersStatus::Continue:
     return Http::FilterTrailersStatus::Continue;
-  case Host::FilterTrailersStatus::StopIteration:
+  case FilterTrailersStatus::StopIteration:
     return Http::FilterTrailersStatus::StopIteration;
   }
 };
 
-Http::FilterMetadataStatus convertFilterMetadataStatus(Host::FilterMetadataStatus status) {
+Http::FilterMetadataStatus convertFilterMetadataStatus(FilterMetadataStatus status) {
   switch (status) {
   default:
-  case Host::FilterMetadataStatus::Continue:
+  case FilterMetadataStatus::Continue:
     return Http::FilterMetadataStatus::Continue;
   }
 };
 
-Http::FilterDataStatus convertFilterDataStatus(Host::FilterDataStatus status) {
+Http::FilterDataStatus convertFilterDataStatus(FilterDataStatus status) {
   switch (status) {
   default:
-  case Host::FilterDataStatus::Continue:
+  case FilterDataStatus::Continue:
     return Http::FilterDataStatus::Continue;
-  case Host::FilterDataStatus::StopIterationAndBuffer:
+  case FilterDataStatus::StopIterationAndBuffer:
     return Http::FilterDataStatus::StopIterationAndBuffer;
-  case Host::FilterDataStatus::StopIterationAndWatermark:
+  case FilterDataStatus::StopIterationAndWatermark:
     return Http::FilterDataStatus::StopIterationAndWatermark;
-  case Host::FilterDataStatus::StopIterationNoBuffer:
+  case FilterDataStatus::StopIterationNoBuffer:
     return Http::FilterDataStatus::StopIterationNoBuffer;
   }
 };
-
-void Context::log(const Http::RequestHeaderMap* request_headers,
-                  const Http::ResponseHeaderMap* response_headers,
-                  const Http::ResponseTrailerMap* response_trailers,
-                  const StreamInfo::StreamInfo& stream_info, AccessLog::AccessLogType) {
-  // `log` may be called multiple times due to mid-request logging -- we only want to run on the
-  // last call.
-  if (!stream_info.requestComplete().has_value()) {
-    return;
-  }
-  if (!in_vm_context_created_) {
-    // If the request is invalid then onRequestHeaders() will not be called and neither will
-    // onCreate() in cases like sendLocalReply who short-circuits envoy
-    // lifecycle. This is because Envoy does not have a well defined lifetime for the combined
-    // HTTP
-    // + AccessLog filter. Thus, to log these scenarios, we call onCreate() in log function below.
-    onCreate();
-  }
-}
 
 void Context::onDestroy() {
   if (destroyed_ || !in_vm_context_created_) {
     return;
   }
   destroyed_ = true;
-  onDone();
-  onDelete();
 }
 
 void Context::sendLocalResponse(uint32_t response_code) {
@@ -374,12 +374,13 @@ void Context::sendLocalResponse(uint32_t response_code) {
 
 Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers, bool end_stream) {
   ENVOY_LOG(warn, " decodeHeaders: endStream: {}", end_stream);
-  onCreate();
+  in_vm_context_created_ = true;
   request_headers_ = &headers;
   if (!end_stream) {
     // If this is not a header-only request, we will handle request in decodeData.
     return Http::FilterHeadersStatus::StopIteration;
   }
+  DeferAfterCallActions actions(this);
   end_of_stream_ = end_stream;
   auto result = convertFilterHeadersStatus(onRequestHeaders(headerSize(&headers), end_stream));
 
@@ -503,6 +504,84 @@ void Context::maybeAddContentLength(uint64_t content_length) {
   if (request_headers_ != nullptr) {
     request_headers_->setContentLength(content_length);
   }
+}
+
+FilterHeadersStatus Context::convertVmCallResultToFilterHeadersStatus(uint64_t result) {
+  if (result == static_cast<uint64_t>(FilterHeadersStatus::StopIteration)) {
+    // Always convert StopIteration (pause processing headers, but continue processing body)
+    // to StopAllIterationAndWatermark (pause all processing), since the former breaks all
+    // assumptions about HTTP processing.
+    return FilterHeadersStatus::StopAllIterationAndWatermark;
+  }
+  return static_cast<FilterHeadersStatus>(result);
+}
+
+FilterDataStatus Context::convertVmCallResultToFilterDataStatus(uint64_t result) {
+  return static_cast<FilterDataStatus>(result);
+}
+
+FilterTrailersStatus Context::convertVmCallResultToFilterTrailersStatus(uint64_t result) {
+  return static_cast<FilterTrailersStatus>(result);
+}
+
+FilterMetadataStatus Context::convertVmCallResultToFilterMetadataStatus(uint64_t result) {
+  if (static_cast<FilterMetadataStatus>(result) == FilterMetadataStatus::Continue) {
+    return FilterMetadataStatus::Continue;
+  }
+  return FilterMetadataStatus::Continue; // This is currently the only return code.
+}
+
+Context::~Context() {
+  // Do not remove vm context which has the same lifetime as wasm_.
+  if (id_ != 0U) {
+    wasm_->contexts_.erase(id_);
+  }
+}
+
+FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stream) {
+  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
+  const auto result = wasm_->handle_request_(this);
+  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
+  return convertVmCallResultToFilterHeadersStatus(result);
+}
+
+FilterDataStatus Context::onRequestBody(uint32_t body_length, bool end_of_stream) {
+  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
+  const auto result = wasm_->handle_request_(this);
+  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
+  auto ctx = result >> 32;
+  uint32_t next = uint32_t(result);
+  return convertVmCallResultToFilterDataStatus(next);
+}
+
+FilterTrailersStatus Context::onRequestTrailers(uint32_t trailers) {
+  CHECK_FAIL_HTTP(FilterTrailersStatus::Continue, FilterTrailersStatus::StopIteration);
+  return FilterTrailersStatus::Continue;
+}
+
+FilterMetadataStatus Context::onRequestMetadata(uint32_t elements) {
+  CHECK_FAIL_HTTP(FilterMetadataStatus::Continue, FilterMetadataStatus::Continue);
+  return FilterMetadataStatus::Continue;
+}
+
+FilterHeadersStatus Context::onResponseHeaders(uint32_t headers, bool end_of_stream) {
+  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
+  return FilterHeadersStatus::Continue;
+}
+
+FilterDataStatus Context::onResponseBody(uint32_t body_length, bool end_of_stream) {
+  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
+  return FilterDataStatus::Continue;
+}
+
+FilterTrailersStatus Context::onResponseTrailers(uint32_t trailers) {
+  CHECK_FAIL_HTTP(FilterTrailersStatus::Continue, FilterTrailersStatus::StopIteration);
+  return FilterTrailersStatus::Continue;
+}
+
+FilterMetadataStatus Context::onResponseMetadata(uint32_t elements) {
+  CHECK_FAIL_HTTP(FilterMetadataStatus::Continue, FilterMetadataStatus::Continue);
+  return FilterMetadataStatus::Continue;
 }
 
 } // namespace HttpWasm

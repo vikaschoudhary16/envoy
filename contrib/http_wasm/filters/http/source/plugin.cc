@@ -1,6 +1,6 @@
 #include "envoy/common/exception.h"
 
-#include "contrib/http_wasm/filters/http/source/host/vm.h"
+#include "contrib/http_wasm/filters/http/source/vm.h"
 #include "contrib/http_wasm/filters/http/source/plugin.h"
 
 namespace Envoy {
@@ -9,11 +9,6 @@ namespace HttpFilters {
 namespace HttpWasm {
 
 WasmConfig::WasmConfig(const envoy::extensions::wasm::v3::PluginConfig& config) : config_(config) {
-  for (auto& capability : config_.capability_restriction_config().allowed_capabilities()) {
-    // TODO(vikas): Set the SanitizationConfig fields once sanitization is implemented.
-    allowed_capabilities_[capability.first] = Host::SanitizationConfig();
-  }
-
   if (config_.vm_config().has_environment_variables()) {
     const auto& envs = config_.vm_config().environment_variables();
 
@@ -42,6 +37,20 @@ WasmConfig::WasmConfig(const envoy::extensions::wasm::v3::PluginConfig& config) 
       }
     }
   }
+}
+
+std::string Plugin::makeLogPrefix() const {
+  std::string prefix;
+  if (!name_.empty()) {
+    prefix = prefix + " " + name_;
+  }
+  if (!root_id_.empty()) {
+    prefix = prefix + " " + std::string(root_id_);
+  }
+  if (!vm_id_.empty()) {
+    prefix = prefix + " " + std::string(vm_id_);
+  }
+  return prefix;
 }
 
 } // namespace HttpWasm

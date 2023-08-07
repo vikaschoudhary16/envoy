@@ -1,4 +1,4 @@
-#include "contrib/http_wasm/filters/http/source/host/vm.h"
+#include "contrib/http_wasm/filters/http/source/vm.h"
 #include "word.h"
 
 #include <openssl/rand.h>
@@ -12,12 +12,11 @@ namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-namespace Host {
 
-thread_local ContextBase* current_context_;
+thread_local Context* current_context_ = nullptr;
 
 // Any currently executing Wasm call context.
-ContextBase* contextOrEffectiveContext() { return current_context_; };
+Context* contextOrEffectiveContext() { return current_context_; };
 namespace exports {
 
 // Administrative ABIs...
@@ -54,7 +53,13 @@ void log(Word level, Word address, Word size) {
 // Header ABIs...
 Word get_method(Word buf, Word buf_len) {
   auto* context = contextOrEffectiveContext();
-  return 0;
+  std::string_view value;
+  auto result = context->getHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":method", &value);
+  if (result != WasmResult::Ok) {
+    return 0;
+  }
+  context->wasmVm()->setMemory(buf, buf_len, (void*)value.data());
+  return value.size();
 }
 
 Word get_uri(Word uri, Word uri_len) {
@@ -70,16 +75,19 @@ Word get_uri(Word uri, Word uri_len) {
 
 Word get_protocol_version(Word buf, Word buf_len) {
   auto* context = contextOrEffectiveContext();
+  // TODO: implement
   return 0;
 }
 
 int64_t get_header_names(Word kind, Word buffer, Word buffer_length) {
   auto* context = contextOrEffectiveContext();
+  // TODO: implement
   return 0;
 }
 
 int64_t get_header_values(Word kind, Word name, Word name_len, Word value, Word value_len) {
   auto* context = contextOrEffectiveContext();
+  // TODO: implement
   return 0;
 }
 
@@ -132,8 +140,17 @@ void write_body(Word kind, Word val, Word size) {
 
 Word get_status_code() {
   auto* context = contextOrEffectiveContext();
-  // return context->getBuffer(WasmBufferType::HttpCallResponseBody)->getBufferLength();
-  return 0;
+  std::string_view value;
+  auto result = context->getHeaderMapValue(WasmHeaderMapType::ResponseHeaders, ":status", &value);
+  if (result != WasmResult::Ok) {
+    return 0;
+  }
+  uint32_t status_code;
+  if (!absl::SimpleAtoi(value, &status_code)) {
+    // ENVOY_LOG(debug, "status code must be a number, got: {}", value);
+    return 0; // TODO: trap
+  }
+  return status_code;
 }
 
 void set_status_code(Word response_code) {
@@ -395,7 +412,6 @@ Word wasi_unstable_path_unlink_file(Word fd, Word path, Word path_len) {
 }
 
 } // namespace exports
-} // namespace Host
 } // namespace HttpWasm
 } // namespace HttpFilters
 } // namespace Extensions

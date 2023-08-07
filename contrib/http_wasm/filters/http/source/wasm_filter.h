@@ -46,7 +46,6 @@ public:
 
 private:
   ThreadLocal::TypedSlotPtr<PluginHandleSharedPtrThreadLocal> tls_slot_;
-  Config::DataSource::RemoteAsyncDataProviderPtr remote_data_provider_;
 };
 
 using FilterConfigSharedPtr = std::shared_ptr<FilterConfig>;

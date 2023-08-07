@@ -1,6 +1,6 @@
-#include "contrib/http_wasm/filters/http/source/host/v8.h"
-#include "contrib/http_wasm/filters/http/source/host/context.h"
-#include "contrib/http_wasm/filters/http/source/host/vm_runtime.h"
+#include "contrib/http_wasm/filters/http/source/v8/v8.h"
+#include "contrib/http_wasm/filters/http/source/context.h"
+#include "contrib/http_wasm/filters/http/source/vm_runtime.h"
 
 #include <cassert>
 #include <iomanip>
@@ -23,30 +23,7 @@ namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-namespace v8 {
-using Host::Cloneable;
-using Host::ContextBase;
-using Host::ConvertFunctionTypeWordToUint32;
-using Host::ConvertWordTypeToUint32;
-using Host::FailState;
-using Host::LogLevel;
-using Host::SaveRestoreContext;
-using Host::WasmCallback_dd;
-using Host::WasmCallback_lWWW;
-using Host::WasmCallback_WWl;
-using Host::WasmCallback_WWlWW;
-using Host::WasmCallback_WWm;
-using Host::WasmCallback_WWmW;
-using Host::WasmCallback_WWWWWWllWW;
-using Host::WasmCallbackl_WWWWW;
-using Host::WasmCallbackVoid;
-using Host::WasmCallbackWord;
-using Host::WasmCallbackWord_WWWlW;
-using Host::WasmCallI64;
-using Host::WasmCallVoid;
-using Host::WasmCallWord;
-using Host::WasmVm;
-using Host::Word;
+namespace V8 {
 
 wasm::Engine* engine() {
   static std::once_flag init;
@@ -67,16 +44,16 @@ struct FuncData {
   std::string name_;
   wasm::own<wasm::Func> callback_;
   void* raw_func_{};
-  WasmVm* vm_{};
+  Runtime* vm_{};
 };
 
 using FuncDataPtr = std::unique_ptr<FuncData>;
 
-class V8 : public WasmVm {
+class V8 : public Runtime {
 public:
   V8() = default;
 
-  // WasmVm
+  // Runtime
   std::string_view getEngineName() override { return "v8"; }
 
   bool load(std::string_view bytecode, std::string_view precompiled,
@@ -85,7 +62,7 @@ public:
   bool link(std::string_view debug_name) override;
 
   Cloneable cloneable() override { return Cloneable::CompiledBytecode; }
-  std::unique_ptr<WasmVm> clone() override;
+  std::unique_ptr<Runtime> clone() override;
 
   uint64_t getMemorySize() override;
   std::optional<std::string_view> getMemory(uint64_t pointer, uint64_t size) override;
@@ -127,11 +104,11 @@ private:
 
   template <typename... Args>
   void getModuleFunctionImpl(std::string_view function_name,
-                             std::function<void(ContextBase*, Args...)>* function);
+                             std::function<void(Context*, Args...)>* function);
 
   template <typename R, typename... Args>
   void getModuleFunctionImpl(std::string_view function_name,
-                             std::function<R(ContextBase*, Args...)>* function);
+                             std::function<R(Context*, Args...)>* function);
 
   wasm::own<wasm::Store> store_;
   wasm::own<wasm::Module> module_;
@@ -303,7 +280,7 @@ bool V8::load(std::string_view bytecode, std::string_view precompiled,
   return true;
 }
 
-std::unique_ptr<WasmVm> V8::clone() {
+std::unique_ptr<Runtime> V8::clone() {
   assert(shared_module_ != nullptr);
 
   auto clone = std::make_unique<V8>();
@@ -321,11 +298,11 @@ std::unique_ptr<WasmVm> V8::clone() {
     return nullptr;
   }
 
-  auto* integration_clone = integration()->clone();
+  auto* integration_clone = logger()->clone();
   if (integration_clone == nullptr) {
     return nullptr;
   }
-  clone->integration().reset(integration_clone);
+  clone->logger().reset(integration_clone);
 
   clone->function_names_index_ = function_names_index_;
 
@@ -543,14 +520,14 @@ void V8::registerHostFunctionImpl(std::string_view module_name, std::string_view
         auto* func_data = reinterpret_cast<FuncData*>(data);
         const bool log = func_data->vm_->cmpLogLevel(LogLevel::debug);
         if (log) {
-          func_data->vm_->integration()->debug("[vm->host] " + func_data->name_ + "(" +
-                                               printValues(params, sizeof...(Args)) + ")");
+          func_data->vm_->logger()->debug("[vm->host] " + func_data->name_ + "(" +
+                                          printValues(params, sizeof...(Args)) + ")");
         }
         auto args = convertValTypesToArgsTuple<std::tuple<Args...>>(params);
         auto function = reinterpret_cast<void (*)(Args...)>(func_data->raw_func_);
         std::apply(function, args);
         if (log) {
-          func_data->vm_->integration()->debug("[vm<-host] " + func_data->name_ + " return: void");
+          func_data->vm_->logger()->debug("[vm<-host] " + func_data->name_ + " return: void");
         }
         return nullptr;
       },
@@ -576,16 +553,16 @@ void V8::registerHostFunctionImpl(std::string_view module_name, std::string_view
         auto* func_data = reinterpret_cast<FuncData*>(data);
         const bool log = func_data->vm_->cmpLogLevel(LogLevel::debug);
         if (log) {
-          func_data->vm_->integration()->debug("[vm->host] " + func_data->name_ + "(" +
-                                               printValues(params, sizeof...(Args)) + ")");
+          func_data->vm_->logger()->debug("[vm->host] " + func_data->name_ + "(" +
+                                          printValues(params, sizeof...(Args)) + ")");
         }
         auto args = convertValTypesToArgsTuple<std::tuple<Args...>>(params);
         auto function = reinterpret_cast<R (*)(Args...)>(func_data->raw_func_);
         R rvalue = std::apply(function, args);
         results[0] = makeVal(rvalue);
         if (log) {
-          func_data->vm_->integration()->debug("[vm<-host] " + func_data->name_ +
-                                               " return: " + std::to_string(rvalue));
+          func_data->vm_->logger()->debug("[vm<-host] " + func_data->name_ +
+                                          " return: " + std::to_string(rvalue));
         }
         return nullptr;
       },
@@ -600,7 +577,7 @@ void V8::registerHostFunctionImpl(std::string_view module_name, std::string_view
 
 template <typename... Args>
 void V8::getModuleFunctionImpl(std::string_view function_name,
-                               std::function<void(ContextBase*, Args...)>* function) {
+                               std::function<void(Context*, Args...)>* function) {
   auto it = module_functions_.find(std::string(function_name));
   if (it == module_functions_.end()) {
     *function = nullptr;
@@ -619,15 +596,15 @@ void V8::getModuleFunctionImpl(std::string_view function_name,
     *function = nullptr;
     return;
   }
-  *function = [func, function_name, this](ContextBase* context, Args... args) -> void {
-    const bool log = false;
+  *function = [func, function_name, this](Context* context, Args... args) -> void {
+    const bool log = cmpLogLevel(LogLevel::debug);
     SaveRestoreContext saved_context(context);
     wasm::own<wasm::Trap> trap = nullptr;
 
     wasm::Val params[] = {makeVal(args)...};
     if (log) {
-      integration()->debug("[host->vm] " + std::string(function_name) + "(" +
-                           printValues(params, sizeof...(Args)) + ")");
+      logger()->debug("[host->vm] " + std::string(function_name) + "(" +
+                      printValues(params, sizeof...(Args)) + ")");
     }
     trap = func->call(params, nullptr);
 
@@ -636,14 +613,14 @@ void V8::getModuleFunctionImpl(std::string_view function_name,
       return;
     }
     if (log) {
-      integration()->debug("[host<-vm] " + std::string(function_name) + " return: void");
+      logger()->debug("[host<-vm] " + std::string(function_name) + " return: void");
     }
   };
 }
 
 template <typename R, typename... Args>
 void V8::getModuleFunctionImpl(std::string_view function_name,
-                               std::function<R(ContextBase*, Args...)>* function) {
+                               std::function<R(Context*, Args...)>* function) {
   auto it = module_functions_.find(std::string(function_name));
   if (it == module_functions_.end()) {
     *function = nullptr;
@@ -662,7 +639,7 @@ void V8::getModuleFunctionImpl(std::string_view function_name,
     *function = nullptr;
     return;
   }
-  *function = [func, function_name, this](ContextBase* context, Args... args) -> R {
+  *function = [func, function_name, this](Context* context, Args... args) -> R {
     const bool log = cmpLogLevel(LogLevel::debug);
     SaveRestoreContext saved_context(context);
     wasm::Val results[1];
@@ -670,8 +647,8 @@ void V8::getModuleFunctionImpl(std::string_view function_name,
 
     wasm::Val params[] = {makeVal(args)...};
     if (log) {
-      integration()->debug("[host->vm] " + std::string(function_name) + "(" +
-                           printValues(params, sizeof...(Args)) + ")");
+      logger()->debug("[host->vm] " + std::string(function_name) + "(" +
+                      printValues(params, sizeof...(Args)) + ")");
     }
     trap = func->call(params, results);
     if (trap) {
@@ -680,8 +657,8 @@ void V8::getModuleFunctionImpl(std::string_view function_name,
     }
     R rvalue = results[0].get<typename ConvertWordTypeToUint32<R>::type>();
     if (log) {
-      integration()->debug("[host<-vm] " + std::string(function_name) +
-                           " return: " + std::to_string(rvalue));
+      logger()->debug("[host<-vm] " + std::string(function_name) +
+                      " return: " + std::to_string(rvalue));
     }
     return rvalue;
   };
@@ -726,11 +703,9 @@ std::string V8::getFailMessage(std::string_view function_name, wasm::own<wasm::T
   }
   return message;
 }
+std::unique_ptr<Runtime> createV8Vm() { return std::make_unique<V8>(); }
 
-} // namespace v8
-
-std::unique_ptr<Host::WasmVm> createV8Vm() { return std::make_unique<v8::V8>(); }
-
+} // namespace V8
 } // namespace HttpWasm
 } // namespace HttpFilters
 } // namespace Extensions

@@ -2,22 +2,23 @@
 
 #include <memory>
 
-#include "contrib/http_wasm/filters/http/source/host/context.h"
-#include "contrib/http_wasm/filters/http/source/host/vm_runtime.h"
-#include "contrib/http_wasm/filters/http/source/host/word.h"
+#include "contrib/http_wasm/filters/http/source/context.h"
+#include "contrib/http_wasm/filters/http/source/vm_runtime.h"
+#include "contrib/http_wasm/filters/http/source/word.h"
+#include "absl/strings/string_view.h"
+#include "absl/strings/numbers.h"
 
 namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-namespace Host {
 
-class ContextBase;
+class Context;
 
 // Any currently executing Wasm call context.
-ContextBase* contextOrEffectiveContext();
+Context* contextOrEffectiveContext();
 
-extern thread_local ContextBase* current_context_;
+// extern thread_local Context* current_context_;
 
 namespace exports {
 
@@ -79,23 +80,20 @@ Word wasi_unstable_path_unlink_file(Word fd, Word path, Word path_len);
   template <typename... Args> struct _fn##Stub<Word(Args...)> {                                    \
     static Word stub(Args...) {                                                                    \
       auto context = contextOrEffectiveContext();                                                  \
-      context->wasmVm()->integration()->error(                                                     \
-          "Attempted call to restricted WASI capability: " #_fn);                                  \
+      context->wasmVm()->logger()->error("Attempted call to restricted WASI capability: " #_fn);   \
       return 76; /* __WASI_ENOTCAPABLE */                                                          \
     }                                                                                              \
   };                                                                                               \
   template <typename... Args> struct _fn##Stub<void(Args...)> {                                    \
     static void stub(Args...) {                                                                    \
       auto context = contextOrEffectiveContext();                                                  \
-      context->wasmVm()->integration()->error(                                                     \
-          "Attempted call to restricted WASI capability: " #_fn);                                  \
+      context->wasmVm()->logger()->error("Attempted call to restricted WASI capability: " #_fn);   \
     }                                                                                              \
   };
 FOR_ALL_WASI_FUNCTIONS(_CREATE_WASI_STUB)
 #undef _CREATE_WASI_STUB
 
 } // namespace exports
-} // namespace Host
 } // namespace HttpWasm
 } // namespace HttpFilters
 } // namespace Extensions

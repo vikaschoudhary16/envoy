@@ -6,9 +6,8 @@ namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-namespace Host {
 
-#include "contrib/http_wasm/filters/http/source/host/http_wasm_common.h"
+#include "contrib/http_wasm/filters/http/source/http_wasm_common.h"
 
 // Use byteswap functions only when compiling for big-endian platforms.
 #if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__) &&                                    \
@@ -67,9 +66,7 @@ struct ConvertFunctionWordToUint32<void(Args...), F> {
   }
 };
 
-} // namespace Host
-
-inline std::ostream& operator<<(std::ostream& os, const Host::Word& w) { return os << w.u64_; }
+inline std::ostream& operator<<(std::ostream& os, const Word& w) { return os << w.u64_; }
 } // namespace HttpWasm
 } // namespace HttpFilters
 } // namespace Extensions
