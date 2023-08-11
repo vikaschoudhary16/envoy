@@ -12,7 +12,6 @@ proto_library(
         "//contrib/envoy/extensions/config/v3alpha:pkg",
         "//contrib/envoy/extensions/filters/http/dynamo/v3:pkg",
         "//contrib/envoy/extensions/filters/http/golang/v3alpha:pkg",
-        "//contrib/envoy/extensions/filters/http/http_wasm/v3alpha:pkg",
         "//contrib/envoy/extensions/filters/http/language/v3alpha:pkg",
         "//contrib/envoy/extensions/filters/http/squash/v3:pkg",
         "//contrib/envoy/extensions/filters/http/sxg/v3alpha:pkg",
