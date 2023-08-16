@@ -50,15 +50,15 @@ inline std::string toString(WasmResult r) {
 #undef _CASE
 
 enum class WasmHeaderMapType : int32_t {
-  RequestHeaders = 0,   // During the onLog callback these are immutable
-  RequestTrailers = 1,  // During the onLog callback these are immutable
-  ResponseHeaders = 2,  // During the onLog callback these are immutable
-  ResponseTrailers = 3, // During the onLog callback these are immutable
+  RequestHeaders = 0,
+  ResponseHeaders = 1,
+  RequestTrailers = 2,
+  ResponseTrailers = 3,
   MAX = 3,
 };
 enum class WasmBufferType : int32_t {
-  HttpRequestBody = 0,  // During the onLog callback these are immutable
-  HttpResponseBody = 1, // During the onLog callback these are immutable
+  HttpRequestBody = 0,
+  HttpResponseBody = 1,
   MAX = 1,
 };
 enum class WasmBufferFlags : int32_t {

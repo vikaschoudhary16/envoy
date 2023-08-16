@@ -1,8 +1,10 @@
 #include "source/extensions/common/http_wasm/context.h"
+#include "http_wasm_enums.h"
 #include "source/extensions/common/http_wasm/vm.h"
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
@@ -83,7 +85,7 @@ int64_t Buffer::copyTo(void* ptr, uint64_t dest_size) {
   // if dest_size is 0, do not copy, spec says panic
   uint64_t eof = 1;
   eof = (eof << 32);
-  if (!const_buffer_instance_) {
+  if (!const_buffer_instance_ || bytes_to_skip_ >= const_buffer_instance_->length()) {
     return eof; // panic
   }
   auto data_size = const_buffer_instance_->length();
@@ -95,13 +97,14 @@ int64_t Buffer::copyTo(void* ptr, uint64_t dest_size) {
 }
 
 WasmResult Buffer::copyFrom(size_t start, std::string_view data, size_t length) {
-  if (buffer_instance_) {
+  if (buffer_instance_ != nullptr) {
     if (length != 0) {
       buffer_instance_->drain(buffer_instance_->length());
     }
     buffer_instance_->prepend(toAbslStringView(data));
     return WasmResult::Ok;
   }
+  return WasmResult::Ok;
 }
 
 // Context::Context() = default;
@@ -195,18 +198,47 @@ WasmResult Context::addHeaderMapValue(WasmHeaderMapType type, std::string_view k
 }
 
 WasmResult Context::getHeaderMapValue(WasmHeaderMapType type, std::string_view key,
-                                      std::string_view* value) {
+                                      std::vector<std::string_view>& name_values) {
   auto map = getConstMap(type);
   if (!map) {
     // Requested map type is not currently available.
     return WasmResult::BadArgument;
   }
   const Http::LowerCaseString lower_key{std::string(key)};
-  const auto entry = map->get(lower_key);
-  if (entry.empty()) {
+  const auto entries = map->get(lower_key);
+  if (entries.empty()) {
     return WasmResult::NotFound;
   }
-  *value = toStdStringView(entry[0]->value().getStringView());
+  // ENVOY_LOG(warn, "header key: {}", key);
+
+  // Create a vector to hold the individual string_view elements
+  std::vector<std::string_view> temp_values;
+  for (size_t i = 0; i < entries.size(); i++) {
+    temp_values.emplace_back(entries[i]->value().getStringView());
+    // ENVOY_LOG(warn, "header key-val: {}: {}", key, entries[i]->value().getStringView());
+  }
+  // Set the output vector
+  name_values = std::move(temp_values);
+  return WasmResult::Ok;
+}
+
+WasmResult Context::getHeaderNames(WasmHeaderMapType type, std::vector<std::string_view>& names) {
+  auto map = getConstMap(type);
+  if (!map) {
+    // Requested map type is not currently available.
+    return WasmResult::BadArgument;
+  }
+  // Create a vector to hold the individual string_view elements
+  std::vector<std::string_view> keys;
+
+  map->iterate([&keys](const Http::HeaderEntry& header) -> Http::HeaderMap::Iterate {
+    keys.emplace_back(header.key().getStringView());
+    // ENVOY_LOG(warn, "header key: {}", header.key().getStringView());
+    return Http::HeaderMap::Iterate::Continue;
+  });
+
+  // Set the output vector
+  names = std::move(keys);
   return WasmResult::Ok;
 }
 
@@ -373,7 +405,6 @@ void Context::sendLocalResponse(uint32_t response_code) {
 }
 
 Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers, bool end_stream) {
-  ENVOY_LOG(warn, " decodeHeaders: endStream: {}", end_stream);
   in_vm_context_created_ = true;
   request_headers_ = &headers;
   if (!end_stream) {
@@ -382,9 +413,7 @@ Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers
   }
   DeferAfterCallActions actions(this);
   end_of_stream_ = end_stream;
-  auto result = convertFilterHeadersStatus(onRequestHeaders(headerSize(&headers), end_stream));
-
-  return result;
+  return convertFilterHeadersStatus(onRequestHeaders(headerSize(&headers), end_stream));
 }
 
 Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool end_stream) {
@@ -436,39 +465,32 @@ Http::Filter1xxHeadersStatus Context::encode1xxHeaders(Http::ResponseHeaderMap&)
 
 Http::FilterHeadersStatus Context::encodeHeaders(Http::ResponseHeaderMap& headers,
                                                  bool end_stream) {
+  ENVOY_LOG(debug, "encodeHeaders: endStream: {}", end_stream);
+  response_headers_ = &headers;
   if (!in_vm_context_created_) {
     return Http::FilterHeadersStatus::Continue;
   }
-  response_headers_ = &headers;
+  if (!end_stream) {
+    // If this is not a header-only response, we will handle response in encodeData.
+    return Http::FilterHeadersStatus::StopIteration;
+  }
+  DeferAfterCallActions actions(this);
   end_of_stream_ = end_stream;
   auto result = convertFilterHeadersStatus(onResponseHeaders(headerSize(&headers), end_stream));
-  if (result == Http::FilterHeadersStatus::Continue) {
-    response_headers_ = nullptr;
-  }
   return result;
 }
 
 Http::FilterDataStatus Context::encodeData(::Envoy::Buffer::Instance& data, bool end_stream) {
+  ENVOY_LOG(debug, "encodeData: endStream: {}", end_stream);
   if (!in_vm_context_created_) {
     return Http::FilterDataStatus::Continue;
   }
+  DeferAfterCallActions actions(this);
   response_body_buffer_ = &data;
   end_of_stream_ = end_stream;
   const auto buffer = getBuffer(WasmBufferType::HttpResponseBody);
   const auto buffer_size = (buffer == nullptr) ? 0 : buffer->size();
   auto result = convertFilterDataStatus(onResponseBody(buffer_size, end_stream));
-  buffering_response_body_ = false;
-  switch (result) {
-  case Http::FilterDataStatus::Continue:
-    request_body_buffer_ = nullptr;
-    break;
-  case Http::FilterDataStatus::StopIterationAndBuffer:
-    buffering_response_body_ = true;
-    break;
-  case Http::FilterDataStatus::StopIterationAndWatermark:
-  case Http::FilterDataStatus::StopIterationNoBuffer:
-    break;
-  }
   return result;
 }
 
@@ -542,14 +564,17 @@ FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stre
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
   const auto result = wasm_->handle_request_(this);
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
-  return convertVmCallResultToFilterHeadersStatus(result);
+  request_context_ = uint32_t(result >> 32);
+  uint32_t next = uint32_t(result);
+  ENVOY_LOG(debug, "onRequestHeaders: {} {} {}", request_context_, next, end_of_stream);
+  return convertVmCallResultToFilterHeadersStatus(next);
 }
 
 FilterDataStatus Context::onRequestBody(uint32_t body_length, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
   const auto result = wasm_->handle_request_(this);
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
-  auto ctx = result >> 32;
+  request_context_ = uint32_t(result >> 32);
   uint32_t next = uint32_t(result);
   return convertVmCallResultToFilterDataStatus(next);
 }
@@ -566,11 +591,14 @@ FilterMetadataStatus Context::onRequestMetadata(uint32_t elements) {
 
 FilterHeadersStatus Context::onResponseHeaders(uint32_t headers, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
+  ENVOY_LOG(debug, "onResponseHeaders: {} ", request_context_);
+  wasm_->handle_response_(this, request_context_, 0);
   return FilterHeadersStatus::Continue;
 }
 
 FilterDataStatus Context::onResponseBody(uint32_t body_length, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
+  wasm_->handle_response_(this, request_context_, 0);
   return FilterDataStatus::Continue;
 }
 

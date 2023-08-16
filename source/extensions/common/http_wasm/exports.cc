@@ -1,6 +1,7 @@
 #include "source/extensions/common/http_wasm/vm.h"
 #include "word.h"
 
+#include <cstdint>
 #include <openssl/rand.h>
 
 #include <fstream>
@@ -8,6 +9,8 @@
 #include <iostream>
 #include <unistd.h>
 #include <utility>
+#include <vector>
+#include <string_view>
 namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
@@ -23,7 +26,10 @@ namespace exports {
 Word get_config(Word value_ptr, Word value_size) {
   auto* context = contextOrEffectiveContext();
   auto value = context->getConfiguration();
-  context->wasmVm()->setMemory(value_ptr, value_size, (void*)value.data());
+  if (value.size() > value_size) {
+    return 0;
+  }
+  context->wasmVm()->setMemory(value_ptr, value.size(), (void*)value.data());
   return value.size();
 }
 
@@ -53,42 +59,101 @@ void log(Word level, Word address, Word size) {
 // Header ABIs...
 Word get_method(Word buf, Word buf_len) {
   auto* context = contextOrEffectiveContext();
-  std::string_view value;
-  auto result = context->getHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":method", &value);
+  std::vector<std::string_view> values;
+  auto result = context->getHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":method", values);
   if (result != WasmResult::Ok) {
     return 0;
   }
-  context->wasmVm()->setMemory(buf, buf_len, (void*)value.data());
-  return value.size();
+  if ((values.size() == 0) || (values.size() > 1)) {
+    return 0;
+  }
+  if (values[0].size() > buf_len) {
+    return 0;
+  }
+  context->wasmVm()->setMemory(buf, values[0].size(), (void*)values[0].data());
+  return values[0].size();
 }
 
 Word get_uri(Word uri, Word uri_len) {
   auto* context = contextOrEffectiveContext();
-  std::string_view value;
-  auto result = context->getHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":path", &value);
+  std::vector<std::string_view> values;
+  auto result = context->getHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":path", values);
   if (result != WasmResult::Ok) {
     return 0;
   }
-  context->wasmVm()->setMemory(uri, uri_len, (void*)value.data());
-  return value.size();
+  if ((values.size() == 0) || (values.size() > 1)) {
+    return 0;
+  }
+  if (values[0].size() > uri_len) {
+    return 0;
+  }
+  context->wasmVm()->setMemory(uri, values[0].size(), (void*)values[0].data());
+  return values[0].size();
 }
 
 Word get_protocol_version(Word buf, Word buf_len) {
   auto* context = contextOrEffectiveContext();
-  // TODO: implement
-  return 0;
+
+  // TODO: get the protocol version from the request headers.
+  std::string_view version = "HTTP/1.1";
+  if (version.size() > buf_len) {
+    return 0;
+  }
+  context->wasmVm()->setMemory(buf, version.size(), (void*)version.data());
+  return version.size();
 }
 
 int64_t get_header_names(Word kind, Word buffer, Word buffer_length) {
   auto* context = contextOrEffectiveContext();
-  // TODO: implement
-  return 0;
+  std::vector<std::string_view> names;
+
+  auto result = context->getHeaderNames(static_cast<WasmHeaderMapType>(kind.u64_), names);
+  if (result != WasmResult::Ok) {
+    return 0;
+  }
+  // iterate over names and copy them into a buffer separated by a byte which is written as a 0
+  // byte to the end of each name.
+  size_t totalCopied = 0;
+  for (const auto& name : names) {
+    if (name.size() + 1 > buffer_length - totalCopied) {
+      // Not enough space left in buffer
+      return 0;
+    }
+    auto separator = std::uint8_t(0); // Separator byte
+    context->wasmVm()->setMemory(buffer + totalCopied, name.size(), (void*)name.data());
+    context->wasmVm()->setMemory(buffer + totalCopied + name.size(), 1, (void*)(&separator));
+    totalCopied += name.size() + 1;
+  }
+
+  uint64_t count = names.size();
+  return count << 32 | totalCopied;
 }
 
-int64_t get_header_values(Word kind, Word name, Word name_len, Word value, Word value_len) {
+int64_t get_header_values(Word kind, Word name, Word name_len, Word buffer, Word buffer_length) {
   auto* context = contextOrEffectiveContext();
-  // TODO: implement
-  return 0;
+  std::vector<std::string_view> nameValues;
+  auto key = context->wasmVm()->getMemory(name, name_len);
+  auto result = context->getHeaderMapValue(static_cast<WasmHeaderMapType>(kind.u64_), key.value(),
+                                           nameValues);
+  if (result != WasmResult::Ok) {
+    return 0;
+  }
+  // iterate over names and copy them into a buffer separated by a byte which is written as a 0
+  // byte to the end of each name.
+  size_t totalCopied = 0;
+  for (const auto& nameValue : nameValues) {
+    if (nameValue.size() + 1 > buffer_length - totalCopied) {
+      // Not enough space left in buffer
+      return 0;
+    }
+    auto separator = std::uint8_t(0); // Separator byte
+    context->wasmVm()->setMemory(buffer + totalCopied, nameValue.size(), (void*)nameValue.data());
+    context->wasmVm()->setMemory(buffer + totalCopied + nameValue.size(), 1, (void*)(&separator));
+    totalCopied += nameValue.size() + 1;
+  }
+
+  uint64_t count = nameValues.size();
+  return count << 32 | totalCopied;
 }
 
 void set_header_value(Word kind, Word name, Word name_len, Word val, Word value_len) {
@@ -140,13 +205,19 @@ void write_body(Word kind, Word val, Word size) {
 
 Word get_status_code() {
   auto* context = contextOrEffectiveContext();
-  std::string_view value;
-  auto result = context->getHeaderMapValue(WasmHeaderMapType::ResponseHeaders, ":status", &value);
+  std::vector<std::string_view> values;
+  auto result = context->getHeaderMapValue(WasmHeaderMapType::ResponseHeaders, ":status", values);
   if (result != WasmResult::Ok) {
     return 0;
   }
+  if ((values.size() == 0) || (values.size() > 1)) {
+    return 0;
+  }
+  if (values[0].size() > 3) {
+    return 0;
+  }
   uint32_t status_code;
-  if (!absl::SimpleAtoi(value, &status_code)) {
+  if (!absl::SimpleAtoi(values[0], &status_code)) {
     // ENVOY_LOG(debug, "status code must be a number, got: {}", value);
     return 0; // TODO: trap
   }

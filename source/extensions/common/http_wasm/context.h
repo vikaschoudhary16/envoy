@@ -51,6 +51,7 @@ public:
   void clear() {
     const_buffer_instance_ = nullptr;
     buffer_instance_ = nullptr;
+    bytes_to_skip_ = 0;
   }
   Buffer* set(std::string_view data);
 
@@ -162,8 +163,8 @@ public:
   WasmResult addHeaderMapValue(WasmHeaderMapType type, std::string_view key,
                                std::string_view value);
   WasmResult getHeaderMapValue(WasmHeaderMapType type, std::string_view key,
-                               std::string_view* value);
-
+                               std::vector<std::string_view>& name_values);
+  WasmResult getHeaderNames(WasmHeaderMapType type, std::vector<std::string_view>& names);
   WasmResult removeHeaderMapValue(WasmHeaderMapType type, std::string_view key);
   WasmResult replaceHeaderMapValue(WasmHeaderMapType type, std::string_view key,
                                    std::string_view value);
@@ -239,6 +240,7 @@ private:
   FilterDataStatus convertVmCallResultToFilterDataStatus(uint64_t result);
   FilterTrailersStatus convertVmCallResultToFilterTrailersStatus(uint64_t result);
   FilterMetadataStatus convertVmCallResultToFilterMetadataStatus(uint64_t result);
+  uint32_t request_context_{0};
 };
 using ContextSharedPtr = std::shared_ptr<Context>;
 

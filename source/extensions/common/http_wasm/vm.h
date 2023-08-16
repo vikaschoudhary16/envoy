@@ -139,9 +139,10 @@ protected:
   WasmCallWord<2> main_;
 
   // Calls into the VM.
-  WasmCallI64<0> handle_request_; // http-wasm
+  WasmCallI64<0> handle_request_;   // http-wasm
+  WasmCallVoid<2> handle_response_; // http-wasm
 
-#define FOR_ALL_MODULE_FUNCTIONS(_f) _f(handle_request)
+#define FOR_ALL_MODULE_FUNCTIONS(_f) _f(handle_request) _f(handle_response)
 
   // Capabilities which are allowed to be linked to the module. If this is empty, restriction
   // is not enforced.
