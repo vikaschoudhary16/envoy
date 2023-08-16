@@ -74,6 +74,11 @@ Word get_method(Word buf, Word buf_len) {
   return values[0].size();
 }
 
+void set_method(Word buf, Word buf_len) {
+  auto* context = contextOrEffectiveContext();
+  // TODO: implement
+}
+
 Word get_uri(Word uri, Word uri_len) {
   auto* context = contextOrEffectiveContext();
   std::vector<std::string_view> values;
@@ -89,6 +94,11 @@ Word get_uri(Word uri, Word uri_len) {
   }
   context->wasmVm()->setMemory(uri, values[0].size(), (void*)values[0].data());
   return values[0].size();
+}
+
+void set_uri(Word buf, Word buf_len) {
+  auto* context = contextOrEffectiveContext();
+  // TODO: implement
 }
 
 Word get_protocol_version(Word buf, Word buf_len) {
@@ -157,6 +167,21 @@ int64_t get_header_values(Word kind, Word name, Word name_len, Word buffer, Word
 }
 
 void set_header_value(Word kind, Word name, Word name_len, Word val, Word value_len) {
+  auto* context = contextOrEffectiveContext();
+  auto key = context->wasmVm()->getMemory(name, name_len);
+  auto value = context->wasmVm()->getMemory(val, value_len);
+  if (key && value) {
+    context->addHeaderMapValue(static_cast<WasmHeaderMapType>(kind.u64_), key.value(),
+                               value.value());
+  }
+}
+
+void remove_header(Word kind, Word name, Word name_len) {
+  auto* context = contextOrEffectiveContext();
+  // TODO: implement
+}
+
+void add_header_value(Word kind, Word name, Word name_len, Word val, Word value_len) {
   auto* context = contextOrEffectiveContext();
   auto key = context->wasmVm()->getMemory(name, name_len);
   auto value = context->wasmVm()->getMemory(val, value_len);

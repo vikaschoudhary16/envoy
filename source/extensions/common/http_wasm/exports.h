@@ -28,11 +28,15 @@ Word enable_features(Word features);
 Word log_enabled(Word level);
 void log(Word level, Word address, Word size);
 Word get_method(Word name, Word name_len);
+void set_method(Word name, Word name_len);
 Word get_uri(Word uri, Word uri_len);
+void set_uri(Word uri, Word uri_len);
 Word get_protocol_version(Word buf, Word buf_len);
 int64_t get_header_names(Word kind, Word buffer, Word buffer_length);
 int64_t get_header_values(Word kind, Word name, Word name_len, Word value, Word value_len);
+void add_header_value(Word kind, Word name, Word name_len, Word value, Word value_len);
 void set_header_value(Word kind, Word name, Word name_len, Word value, Word value_len);
+void remove_header(Word kind, Word name, Word name_len);
 int64_t read_body(Word kind, Word buffer, Word buffer_length);
 void write_body(Word kind, Word buffer, Word buffer_length);
 Word get_status_code();
@@ -64,8 +68,9 @@ Word wasi_unstable_path_unlink_file(Word fd, Word path, Word path_len);
 
 #define FOR_ALL_HOST_FUNCTIONS(_f)                                                                 \
   _f(get_config) _f(enable_features) _f(log_enabled) _f(log) _f(read_body) _f(write_body)          \
-      _f(get_method) _f(get_uri) _f(get_protocol_version) _f(get_header_names)                     \
-          _f(get_header_values) _f(set_header_value) _f(get_status_code) _f(set_status_code)
+      _f(get_method) _f(set_method) _f(get_uri) _f(set_uri) _f(get_protocol_version)               \
+          _f(get_header_names) _f(get_header_values) _f(set_header_value) _f(add_header_value)     \
+              _f(remove_header) _f(get_status_code) _f(set_status_code)
 
 #define FOR_ALL_WASI_FUNCTIONS(_f)                                                                 \
   _f(fd_write) _f(fd_read) _f(fd_seek) _f(fd_close) _f(fd_fdstat_get) _f(environ_get)              \

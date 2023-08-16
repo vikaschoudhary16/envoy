@@ -92,7 +92,7 @@ int64_t Buffer::copyTo(void* ptr, uint64_t dest_size) {
   uint64_t bytes_to_copy = std::min(dest_size, data_size - bytes_to_skip_);
   const_buffer_instance_->copyOut(bytes_to_skip_, bytes_to_copy, ptr);
   bytes_to_skip_ += dest_size;
-  eof = (static_cast<uint64_t>(bytes_to_copy < dest_size ? 1 : 0) << 32);
+  eof = (static_cast<uint64_t>(bytes_to_copy <= dest_size ? 1 : 0) << 32);
   return (uint64_t(bytes_to_copy) | eof);
 }
 
