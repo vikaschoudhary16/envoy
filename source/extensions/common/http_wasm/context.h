@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <string_view>
 
 #include "envoy/access_log/access_log.h"
 #include "envoy/buffer/buffer.h"
@@ -157,7 +158,13 @@ public:
   // General
   WasmResult log(uint32_t level, std::string_view message);
   std::string_view getConfiguration();
-  void sendLocalResponse(uint32_t response_code);
+  void sendLocalResponse();
+  void setLocalResponseCode(uint32_t);
+  void setLocalResponseBody(std::string_view);
+  void clearLocalResponse() {
+    local_response_body_ = "";
+    local_response_status_code_ = 0;
+  }
 
   // Header/Trailer/Metadata Maps
   WasmResult addHeaderMapValue(WasmHeaderMapType type, std::string_view key,
@@ -173,18 +180,7 @@ public:
 
   // Buffer
   Buffer* getBuffer(WasmBufferType type);
-  // Actions to be done after the call into the VM returns.
-  std::deque<std::function<void()>> after_vm_call_actions_;
-  void addAfterVmCallAction(std::function<void()> f) { after_vm_call_actions_.push_back(f); }
-  void doAfterVmCallActions() {
-    if (!after_vm_call_actions_.empty()) {
-      while (!after_vm_call_actions_.empty()) {
-        auto f = std::move(after_vm_call_actions_.front());
-        after_vm_call_actions_.pop_front();
-        f();
-      }
-    }
-  }
+
   uint64_t getCurrentTimeNanoseconds() {
     unimplemented();
     return 0;
@@ -235,6 +231,8 @@ protected:
   bool stream_failed_ = false; // Set true after failStream is called in case of VM failure.
 
 private:
+  std::string_view local_response_body_;
+  uint32_t local_response_status_code_;
   // helper functions
   FilterHeadersStatus convertVmCallResultToFilterHeadersStatus(uint64_t result);
   FilterDataStatus convertVmCallResultToFilterDataStatus(uint64_t result);
@@ -244,10 +242,15 @@ private:
 };
 using ContextSharedPtr = std::shared_ptr<Context>;
 
-class DeferAfterCallActions {
+class LocalResponseAfterGuestCall {
 public:
-  DeferAfterCallActions(Context* context) : context_(context) {}
-  ~DeferAfterCallActions();
+  LocalResponseAfterGuestCall(Context* context) : context_(context) {
+    context_->clearLocalResponse();
+  }
+  ~LocalResponseAfterGuestCall() {
+    context_->sendLocalResponse();
+    context_->clearLocalResponse();
+  }
 
 private:
   Context* const context_;

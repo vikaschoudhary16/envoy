@@ -76,7 +76,8 @@ Word get_method(Word buf, Word buf_len) {
 
 void set_method(Word buf, Word buf_len) {
   auto* context = contextOrEffectiveContext();
-  // TODO: implement
+  auto value = context->wasmVm()->getMemory(buf, buf_len);
+  context->replaceHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":method", value.value());
 }
 
 Word get_uri(Word uri, Word uri_len) {
@@ -98,7 +99,8 @@ Word get_uri(Word uri, Word uri_len) {
 
 void set_uri(Word buf, Word buf_len) {
   auto* context = contextOrEffectiveContext();
-  // TODO: implement
+  auto value = context->wasmVm()->getMemory(buf, buf_len);
+  context->replaceHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":path", value.value());
 }
 
 Word get_protocol_version(Word buf, Word buf_len) {
@@ -171,14 +173,17 @@ void set_header_value(Word kind, Word name, Word name_len, Word val, Word value_
   auto key = context->wasmVm()->getMemory(name, name_len);
   auto value = context->wasmVm()->getMemory(val, value_len);
   if (key && value) {
-    context->addHeaderMapValue(static_cast<WasmHeaderMapType>(kind.u64_), key.value(),
-                               value.value());
+    context->replaceHeaderMapValue(static_cast<WasmHeaderMapType>(kind.u64_), key.value(),
+                                   value.value());
   }
 }
 
 void remove_header(Word kind, Word name, Word name_len) {
   auto* context = contextOrEffectiveContext();
-  // TODO: implement
+  auto key = context->wasmVm()->getMemory(name, name_len);
+  if (key) {
+    context->removeHeaderMapValue(static_cast<WasmHeaderMapType>(kind.u64_), key.value());
+  }
 }
 
 void add_header_value(Word kind, Word name, Word name_len, Word val, Word value_len) {
@@ -214,14 +219,14 @@ void write_body(Word kind, Word val, Word size) {
     return;
   }
   auto* context = contextOrEffectiveContext();
-  auto* buffer = context->getBuffer(static_cast<WasmBufferType>(kind.u64_));
-  if (buffer == nullptr) {
-    // TODO:trap
-    return;
-  }
   auto srcMemory = context->wasmVm()->getMemory(val.u64_, size);
   if (!srcMemory) {
     // TODO: trap
+    return;
+  }
+  auto* buffer = context->getBuffer(static_cast<WasmBufferType>(kind.u64_));
+  if (buffer == nullptr && kind == static_cast<uint64_t>(WasmBufferType::HttpResponseBody)) {
+    context->setLocalResponseBody(srcMemory.value());
     return;
   }
   buffer->copyFrom(0, srcMemory.value(), size);
@@ -251,7 +256,7 @@ Word get_status_code() {
 
 void set_status_code(Word response_code) {
   auto* context = contextOrEffectiveContext();
-  context->sendLocalResponse(response_code);
+  context->setLocalResponseCode(response_code);
   return;
 }
 

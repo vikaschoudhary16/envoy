@@ -57,9 +57,6 @@ namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-// using Host::DeferAfterCallActions;
-// using Host::LogLevel;
-// using Host::Word;
 
 namespace {
 using HashPolicy = envoy::config::route::v3::RouteAction::HashPolicy;
@@ -79,7 +76,6 @@ size_t Buffer::size() const {
   }
   return 0;
 }
-DeferAfterCallActions::~DeferAfterCallActions() { context_->doAfterVmCallActions(); }
 
 int64_t Buffer::copyTo(void* ptr, uint64_t dest_size) {
   // if dest_size is 0, do not copy, spec says panic
@@ -296,6 +292,9 @@ Buffer* Context::getBuffer(WasmBufferType type) {
   case WasmBufferType::HttpRequestBody:
     return buffer_.set(request_body_buffer_);
   case WasmBufferType::HttpResponseBody:
+    if (response_body_buffer_ == nullptr) {
+      return nullptr;
+    }
     return buffer_.set(response_body_buffer_);
   default:
     return nullptr;
@@ -395,15 +394,57 @@ void Context::onDestroy() {
   destroyed_ = true;
 }
 
-void Context::sendLocalResponse(uint32_t response_code) {
-  if (decoder_callbacks_) {
-    addAfterVmCallAction([this, response_code] {
-      decoder_callbacks_->sendLocalReply(static_cast<Envoy::Http::Code>(response_code),
-                                         "" /*body_text*/, nullptr, 0, "" /*details*/);
-    });
+void Context::sendLocalResponse() {
+  if (decoder_callbacks_ && (!local_response_body_.empty() || local_response_status_code_ > 0)) {
+    if (local_response_status_code_ == 0) {
+      // guest has not set the response code, get the code sent by the upstream
+      std::vector<std::string_view> values;
+      auto result = getHeaderMapValue(WasmHeaderMapType::ResponseHeaders, ":status", values);
+      while (true) {
+        if (result != WasmResult::Ok) {
+          local_response_status_code_ = 200;
+          break;
+        }
+        if ((!values.empty()) || (values.size() > 1)) {
+          local_response_status_code_ = 200;
+          break;
+        }
+        if (values[0].size() > 3) {
+          local_response_status_code_ = 200;
+          break;
+        }
+        if (!absl::SimpleAtoi(values[0], &local_response_status_code_)) {
+          local_response_status_code_ = 200;
+          break;
+        }
+        break;
+      }
+    }
+    const auto update_headers = [this](Envoy::Http::ResponseHeaderMap& headers) {
+      // copy this->response_headers_ to headers
+      headers = *this->response_headers_;
+      std::vector<std::string_view> names;
+      this->getHeaderNames(WasmHeaderMapType::ResponseHeaders, names);
+      // iterate over names and print
+      for (auto& name : names) {
+        std::vector<std::string_view> values;
+        this->getHeaderMapValue(WasmHeaderMapType::ResponseHeaders, name, values);
+        ENVOY_LOG(warn, "resp-header: {}={}", name, values[0]);
+        for (auto& value : values) {
+          headers.addCopy(Http::LowerCaseString(std::string(name)), std::string(value));
+        }
+      }
+    };
+    decoder_callbacks_->sendLocalReply(static_cast<Envoy::Http::Code>(local_response_status_code_),
+                                       local_response_body_, update_headers, 0, "" /*details*/);
   }
 }
 
+void Context::setLocalResponseCode(uint32_t response_code) {
+  local_response_status_code_ = response_code;
+}
+
+void Context::setLocalResponseBody(std::string_view body) { local_response_body_ = body; }
 Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers, bool end_stream) {
   in_vm_context_created_ = true;
   request_headers_ = &headers;
@@ -411,7 +452,7 @@ Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers
     // If this is not a header-only request, we will handle request in decodeData.
     return Http::FilterHeadersStatus::StopIteration;
   }
-  DeferAfterCallActions actions(this);
+  LocalResponseAfterGuestCall actions(this);
   end_of_stream_ = end_stream;
   return convertFilterHeadersStatus(onRequestHeaders(headerSize(&headers), end_stream));
 }
@@ -421,7 +462,7 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
   if (!in_vm_context_created_) {
     return Http::FilterDataStatus::Continue;
   }
-  DeferAfterCallActions actions(this);
+  LocalResponseAfterGuestCall actions(this);
   request_body_buffer_ = &data;
   end_of_stream_ = end_stream;
   const auto buffer = getBuffer(WasmBufferType::HttpRequestBody);
@@ -474,7 +515,7 @@ Http::FilterHeadersStatus Context::encodeHeaders(Http::ResponseHeaderMap& header
     // If this is not a header-only response, we will handle response in encodeData.
     return Http::FilterHeadersStatus::StopIteration;
   }
-  DeferAfterCallActions actions(this);
+  LocalResponseAfterGuestCall actions(this);
   end_of_stream_ = end_stream;
   auto result = convertFilterHeadersStatus(onResponseHeaders(headerSize(&headers), end_stream));
   return result;
@@ -485,7 +526,7 @@ Http::FilterDataStatus Context::encodeData(::Envoy::Buffer::Instance& data, bool
   if (!in_vm_context_created_) {
     return Http::FilterDataStatus::Continue;
   }
-  DeferAfterCallActions actions(this);
+  LocalResponseAfterGuestCall actions(this);
   response_body_buffer_ = &data;
   end_of_stream_ = end_stream;
   const auto buffer = getBuffer(WasmBufferType::HttpResponseBody);
