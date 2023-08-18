@@ -1,4 +1,5 @@
 #include "source/extensions/common/http_wasm/context.h"
+#include "http_wasm_common.h"
 #include "http_wasm_enums.h"
 #include "source/extensions/common/http_wasm/vm.h"
 
@@ -87,8 +88,13 @@ int64_t Buffer::copyTo(void* ptr, uint64_t dest_size) {
   auto data_size = const_buffer_instance_->length();
   uint64_t bytes_to_copy = std::min(dest_size, data_size - bytes_to_skip_);
   const_buffer_instance_->copyOut(bytes_to_skip_, bytes_to_copy, ptr);
+
   bytes_to_skip_ += dest_size;
-  eof = (static_cast<uint64_t>(bytes_to_copy <= dest_size ? 1 : 0) << 32);
+  eof = bytes_to_skip_ >= data_size;
+  if (eof) {
+    bytes_to_skip_ = 0;
+    eof = (static_cast<uint64_t>(eof << 32));
+  }
   return (uint64_t(bytes_to_copy) | eof);
 }
 
@@ -255,7 +261,13 @@ WasmResult Context::replaceHeaderMapValue(WasmHeaderMapType type, std::string_vi
                                           std::string_view value) {
   auto map = getMap(type);
   if (!map) {
-    return WasmResult::BadArgument;
+    if (!local_response_headers_) {
+      local_response_headers_ =
+          Envoy::Http::createHeaderMap<Envoy::Http::ResponseHeaderMapImpl>({});
+    }
+    local_response_headers_->setCopy(Envoy::Http::LowerCaseString(key),
+                                     Envoy::Http::LowerCaseString(value));
+    return WasmResult::Ok;
   }
   const Http::LowerCaseString lower_key{std::string(key)};
   map->setCopy(lower_key, toAbslStringView(value));
@@ -394,7 +406,10 @@ void Context::onDestroy() {
   destroyed_ = true;
 }
 
-void Context::sendLocalResponse() {
+void Context::sendLocalResponse(WasmBufferType type) {
+  if ((type == WasmBufferType::HttpRequestBody) && (local_response_status_code_ == 0)) {
+    return;
+  }
   if (decoder_callbacks_ && (!local_response_body_.empty() || local_response_status_code_ > 0)) {
     if (local_response_status_code_ == 0) {
       // guest has not set the response code, get the code sent by the upstream
@@ -437,6 +452,7 @@ void Context::sendLocalResponse() {
     };
     decoder_callbacks_->sendLocalReply(static_cast<Envoy::Http::Code>(local_response_status_code_),
                                        local_response_body_, update_headers, 0, "" /*details*/);
+    clearLocalResponse();
   }
 }
 
@@ -452,7 +468,8 @@ Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers
     // If this is not a header-only request, we will handle request in decodeData.
     return Http::FilterHeadersStatus::StopIteration;
   }
-  LocalResponseAfterGuestCall actions(this);
+  LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
+  clearLocalResponse();
   end_of_stream_ = end_stream;
   return convertFilterHeadersStatus(onRequestHeaders(headerSize(&headers), end_stream));
 }
@@ -462,7 +479,8 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
   if (!in_vm_context_created_) {
     return Http::FilterDataStatus::Continue;
   }
-  LocalResponseAfterGuestCall actions(this);
+  LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
+  clearLocalResponse();
   request_body_buffer_ = &data;
   end_of_stream_ = end_stream;
   const auto buffer = getBuffer(WasmBufferType::HttpRequestBody);
@@ -508,6 +526,17 @@ Http::FilterHeadersStatus Context::encodeHeaders(Http::ResponseHeaderMap& header
                                                  bool end_stream) {
   ENVOY_LOG(debug, "encodeHeaders: endStream: {}", end_stream);
   response_headers_ = &headers;
+  if (local_response_headers_) {
+    local_response_headers_->iterate(
+        [this](const Http::HeaderEntry& header) -> Http::HeaderMap::Iterate {
+          this->response_headers_->appendCopy(
+              Envoy::Http::LowerCaseString(header.key().getStringView()),
+              Envoy::Http::LowerCaseString(header.value().getStringView()));
+          ENVOY_LOG(warn, "appending resp header key: {}", header.key().getStringView());
+          return Http::HeaderMap::Iterate::Continue;
+        });
+  }
+
   if (!in_vm_context_created_) {
     return Http::FilterHeadersStatus::Continue;
   }
@@ -515,7 +544,7 @@ Http::FilterHeadersStatus Context::encodeHeaders(Http::ResponseHeaderMap& header
     // If this is not a header-only response, we will handle response in encodeData.
     return Http::FilterHeadersStatus::StopIteration;
   }
-  LocalResponseAfterGuestCall actions(this);
+  LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpResponseBody);
   end_of_stream_ = end_stream;
   auto result = convertFilterHeadersStatus(onResponseHeaders(headerSize(&headers), end_stream));
   return result;
@@ -526,7 +555,7 @@ Http::FilterDataStatus Context::encodeData(::Envoy::Buffer::Instance& data, bool
   if (!in_vm_context_created_) {
     return Http::FilterDataStatus::Continue;
   }
-  LocalResponseAfterGuestCall actions(this);
+  LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpResponseBody);
   response_body_buffer_ = &data;
   end_of_stream_ = end_stream;
   const auto buffer = getBuffer(WasmBufferType::HttpResponseBody);

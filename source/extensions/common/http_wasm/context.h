@@ -52,7 +52,6 @@ public:
   void clear() {
     const_buffer_instance_ = nullptr;
     buffer_instance_ = nullptr;
-    bytes_to_skip_ = 0;
   }
   Buffer* set(std::string_view data);
 
@@ -158,12 +157,13 @@ public:
   // General
   WasmResult log(uint32_t level, std::string_view message);
   std::string_view getConfiguration();
-  void sendLocalResponse();
+  void sendLocalResponse(WasmBufferType);
   void setLocalResponseCode(uint32_t);
   void setLocalResponseBody(std::string_view);
   void clearLocalResponse() {
     local_response_body_ = "";
     local_response_status_code_ = 0;
+    local_response_headers_.reset();
   }
 
   // Header/Trailer/Metadata Maps
@@ -233,6 +233,7 @@ protected:
 private:
   std::string_view local_response_body_;
   uint32_t local_response_status_code_;
+  Envoy::Http::ResponseHeaderMapPtr local_response_headers_;
   // helper functions
   FilterHeadersStatus convertVmCallResultToFilterHeadersStatus(uint64_t result);
   FilterDataStatus convertVmCallResultToFilterDataStatus(uint64_t result);
@@ -244,16 +245,15 @@ using ContextSharedPtr = std::shared_ptr<Context>;
 
 class LocalResponseAfterGuestCall {
 public:
-  LocalResponseAfterGuestCall(Context* context) : context_(context) {
-    context_->clearLocalResponse();
-  }
+  LocalResponseAfterGuestCall(Context* context, WasmBufferType type)
+      : context_(context), type_(type) {}
   ~LocalResponseAfterGuestCall() {
-    context_->sendLocalResponse();
-    context_->clearLocalResponse();
+    context_->sendLocalResponse(type_);
   }
 
 private:
   Context* const context_;
+  WasmBufferType type_;
 };
 
 } // namespace HttpWasm
