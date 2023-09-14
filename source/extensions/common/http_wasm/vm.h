@@ -5,23 +5,21 @@
 #include "source/extensions/common/http_wasm/vm_runtime.h"
 #include "source/extensions/common/http_wasm/bytecode_util.h"
 #include "envoy/server/lifecycle_notifier.h"
-//#include "source/common/config/datasource.h"
-//#include "source/extensions/common/wasm/stats_handler.h"
 
 namespace Envoy {
 namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
-class WasmHandle;
+class GuestHandle;
 using EnvironmentVariableMap = std::unordered_map<std::string, std::string>;
 
 // using Common::Wasm::WasmEvent;
 //  using Host::FailState;
 //   using Host::Runtime;
 using WasmVmFactory = std::function<std::unique_ptr<Runtime>()>;
-using WasmHandleFactory = std::function<std::shared_ptr<WasmHandle>(std::string_view vm_id)>;
-using WasmHandleCloneFactory =
-    std::function<std::shared_ptr<WasmHandle>(std::shared_ptr<WasmHandle> wasm)>;
+using GuestHandleFactory = std::function<std::shared_ptr<GuestHandle>(std::string_view vm_id)>;
+using GuestHandleCloneFactory =
+    std::function<std::shared_ptr<GuestHandle>(std::shared_ptr<GuestHandle> wasm)>;
 using CallOnThreadFunction = std::function<void(std::function<void()>)>;
 
 class WasmConfig;
@@ -29,28 +27,31 @@ class Wasm : public Logger::Loggable<Logger::Id::wasm>, public std::enable_share
 public:
   Wasm(WasmConfig& config, absl::string_view vm_key, const Stats::ScopeSharedPtr& scope,
        Api::Api& api, Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher);
-  Wasm(std::shared_ptr<WasmHandle> other, Event::Dispatcher& dispatcher);
+  Wasm(std::shared_ptr<GuestHandle> other, Event::Dispatcher& dispatcher);
   ~Wasm();
 
   Upstream::ClusterManager& clusterManager() const { return cluster_manager_; }
   Event::Dispatcher& dispatcher() { return dispatcher_; }
   // Api::Api& api() { return api_; }
-  Context* getRootContext() { return plugin_context_.get(); }
+  Context* getRootContext() { return initialized_guest_context_.get(); }
   std::shared_ptr<Wasm> sharedThis() { return std::static_pointer_cast<Wasm>(shared_from_this()); }
 
   // // AccessLog::Instance
-  // void log(const PluginSharedPtr& plugin, const Http::RequestHeaderMap* request_headers,
+  // void log(const InitializedGuestSharedPtr& initialized_guest, const Http::RequestHeaderMap*
+  // request_headers,
   //          const Http::ResponseHeaderMap* response_headers,
   //          const Http::ResponseTrailerMap* response_trailers,
   //          const StreamInfo::StreamInfo& stream_info, AccessLog::AccessLogType access_log_type);
 
   void initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notifier);
   bool load(const std::string& code, bool allow_precompiled = false);
-  bool initializeAndStart(Context* plugin_context);
-  void startVm(Context* plugin_context);
-  bool configure(Context* plugin_context, std::shared_ptr<Plugin> plugin);
-  // Returns the plugin Context.
-  Context* getOrCreatePluginContext(const std::shared_ptr<Plugin>& plugin);
+  bool initializeAndStart(Context* initialized_guest_context);
+  void startVm(Context* initialized_guest_context);
+  bool configure(Context* initialized_guest_context,
+                 std::shared_ptr<InitializedGuest> initialized_guest);
+  // Returns the initialized_guest Context.
+  Context*
+  getOrCreateInitializedGuestContext(const std::shared_ptr<InitializedGuest>& initialized_guest);
 
   std::string_view vm_id() const { return vm_id_; }
   std::string_view vm_key() const { return vm_key_; }
@@ -71,10 +72,10 @@ public:
   const std::string& modulePrecompiled() const { return module_precompiled_; }
   const std::unordered_map<uint32_t, std::string> functionNames() const { return function_names_; }
 
-  void timerReady(uint32_t plugin_context_id);
-  void queueReady(uint32_t plugin_context_id, uint32_t token);
+  void timerReady(uint32_t initialized_guest_context_id);
+  void queueReady(uint32_t initialized_guest_context_id, uint32_t token);
 
-  WasmResult done(Context* plugin_context);
+  WasmResult done(Context* initialized_guest_context);
 
   // Proxy specific extension points.
   //
@@ -91,8 +92,8 @@ public:
            allowed_capabilities_.find(capability_name) != allowed_capabilities_.end();
   }
 
-  Context* createRootContext(const std::shared_ptr<Plugin>& plugin);
-  virtual Context* createContext(const std::shared_ptr<Plugin>& plugin);
+  Context* createRootContext(const std::shared_ptr<InitializedGuest>& initialized_guest);
+  virtual Context* createContext(const std::shared_ptr<InitializedGuest>& initialized_guest);
   template <typename T> bool setDatatype(uint64_t ptr, const T& t);
   void fail(FailState fail_state, std::string_view message) {
     error(message);
@@ -124,8 +125,8 @@ protected:
   std::unique_ptr<Runtime> runtime_;
   std::optional<Cloneable> started_from_;
 
-  uint32_t next_context_id_ = 1;            // 0 is reserved for the VM context.
-  std::unique_ptr<Context> plugin_context_; // Plugin Context
+  uint32_t next_context_id_ = 1;                       // 0 is reserved for the VM context.
+  std::unique_ptr<Context> initialized_guest_context_; // InitializedGuest Context
   std::unordered_map<std::string, std::unique_ptr<Context>> pending_done_; // Root contexts.
   std::unordered_set<std::unique_ptr<Context>> pending_delete_;            // Root contexts.
   std::unordered_map<uint32_t, Context*> contexts_;                        // Contains all contexts.
@@ -148,9 +149,9 @@ protected:
   // is not enforced.
   AllowedCapabilitiesMap allowed_capabilities_;
 
-  std::shared_ptr<WasmHandle> parent_wasm_handle_;
+  std::shared_ptr<GuestHandle> parent_guest_handle_;
 
-  // Used by the base_wasm to enable non-clonable thread local Wasm(s) to be constructed.
+  // Used by the uninitialized_guest to enable non-clonable thread local Wasm(s) to be constructed.
   std::string module_bytecode_;
   std::string module_precompiled_;
   std::unordered_map<uint32_t, std::string> function_names_;
@@ -161,80 +162,88 @@ protected:
 };
 using WasmSharedPtr = std::shared_ptr<Wasm>;
 
-class WasmHandle : public ThreadLocal::ThreadLocalObject,
-                   public std::enable_shared_from_this<WasmHandle> {
+class GuestHandle : public ThreadLocal::ThreadLocalObject,
+                    public std::enable_shared_from_this<GuestHandle> {
 public:
-  explicit WasmHandle(std::shared_ptr<Wasm> wasm_) : wasm_(wasm_) {}
+  explicit GuestHandle(std::shared_ptr<Wasm> guest_) : guest_(guest_) {}
 
-  bool canary(const std::shared_ptr<Plugin>& plugin, const WasmHandleCloneFactory& clone_factory);
+  bool canary(const std::shared_ptr<InitializedGuest>& initialized_guest,
+              const GuestHandleCloneFactory& clone_factory);
 
-  void kill() { wasm_ = nullptr; }
+  void kill() { guest_ = nullptr; }
 
-  std::shared_ptr<Wasm>& wasm() { return wasm_; }
+  std::shared_ptr<Wasm>& guest() { return guest_; }
 
 protected:
-  std::shared_ptr<Wasm> wasm_;
-  std::unordered_map<std::string, bool> plugin_canary_cache_;
+  std::shared_ptr<Wasm> guest_;
+  std::unordered_map<std::string, bool> initialized_guest_canary_cache_;
 };
-using WasmHandleSharedPtr = std::shared_ptr<WasmHandle>;
+using GuestHandleSharedPtr = std::shared_ptr<GuestHandle>;
 
 std::string makeVmKey(std::string_view vm_id, std::string_view configuration,
                       std::string_view code);
 
-class PluginHandle : public std::enable_shared_from_this<PluginHandle> {
+class InitializedGuestHandle : public std::enable_shared_from_this<InitializedGuestHandle> {
 public:
-  explicit PluginHandle(std::shared_ptr<WasmHandle> wasm_handle, std::shared_ptr<Plugin> plugin)
-      : plugin_(plugin), wasm_handle_(wasm_handle) {}
-  std::shared_ptr<Plugin>& plugin() { return plugin_; }
-  std::shared_ptr<Wasm>& wasm() { return wasm_handle_->wasm(); }
-  WasmHandleSharedPtr& wasmHandle() { return wasm_handle_; }
+  explicit InitializedGuestHandle(std::shared_ptr<GuestHandle> guest_handle,
+                                  std::shared_ptr<InitializedGuest> initialized_guest)
+      : initialized_guest_(initialized_guest), guest_handle_(guest_handle) {}
+  std::shared_ptr<InitializedGuest>& initializedGuest() { return initialized_guest_; }
+  std::shared_ptr<Wasm>& guest() { return guest_handle_->guest(); }
+  GuestHandleSharedPtr& wasmHandle() { return guest_handle_; }
   uint32_t rootContextId();
 
 private:
-  std::shared_ptr<Plugin> plugin_;
-  std::shared_ptr<WasmHandle> wasm_handle_;
+  std::shared_ptr<InitializedGuest> initialized_guest_;
+  std::shared_ptr<GuestHandle> guest_handle_;
 };
 
-using PluginHandleSharedPtr = std::shared_ptr<PluginHandle>;
-class PluginHandleSharedPtrThreadLocal : public ThreadLocal::ThreadLocalObject {
+using InitializedGuestHandleSharedPtr = std::shared_ptr<InitializedGuestHandle>;
+class InitializedGuestHandleSharedPtrThreadLocal : public ThreadLocal::ThreadLocalObject {
 public:
-  PluginHandleSharedPtrThreadLocal(PluginHandleSharedPtr handle) : handle_(handle){};
-  PluginHandleSharedPtr& handle() { return handle_; }
+  InitializedGuestHandleSharedPtrThreadLocal(InitializedGuestHandleSharedPtr handle)
+      : handle_(handle){};
+  InitializedGuestHandleSharedPtr& handle() { return handle_; }
 
 private:
-  PluginHandleSharedPtr handle_;
+  InitializedGuestHandleSharedPtr handle_;
 };
 
-using createVmCallback = std::function<void(WasmHandleSharedPtr)>;
-bool createVm(const PluginSharedPtr& plugin, const Stats::ScopeSharedPtr& scope,
-              Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
-              Api::Api& api, Envoy::Server::ServerLifecycleNotifier& lifecycle_notifier,
-              createVmCallback&& callback);
+using loadGuestCallback = std::function<void(GuestHandleSharedPtr)>;
+bool loadGuest(const InitializedGuestSharedPtr& initialized_guest,
+               const Stats::ScopeSharedPtr& scope, Upstream::ClusterManager& cluster_manager,
+               Event::Dispatcher& dispatcher, Api::Api& api,
+               Envoy::Server::ServerLifecycleNotifier& lifecycle_notifier,
+               loadGuestCallback&& callback);
 // Returns nullptr on failure (i.e. initialization of the VM fails).
-std::shared_ptr<WasmHandle> createVm(const std::string& vm_key, const std::string& code,
-                                     const std::shared_ptr<Plugin>& plugin,
-                                     const WasmHandleFactory& factory, bool allow_precompiled);
+std::shared_ptr<GuestHandle> loadGuest(const std::string& vm_key, const std::string& code,
+                                       const std::shared_ptr<InitializedGuest>& initialized_guest,
+                                       const GuestHandleFactory& factory, bool allow_precompiled);
 
-using PluginHandleFactory = std::function<std::shared_ptr<PluginHandle>(
-    std::shared_ptr<WasmHandle> wasm, std::shared_ptr<Plugin> plugin)>;
+using InitializedGuestHandleFactory = std::function<std::shared_ptr<InitializedGuestHandle>(
+    std::shared_ptr<GuestHandle> wasm, std::shared_ptr<InitializedGuest> initialized_guest)>;
 
-static std::shared_ptr<WasmHandle>
-getOrCreateThreadLocalWasm(const std::shared_ptr<WasmHandle>& handle,
-                           const WasmHandleCloneFactory& clone_factory, std::string_view vm_key);
+static std::shared_ptr<GuestHandle>
+getOrCreateThreadLocalUninitializedGuest(const std::shared_ptr<GuestHandle>& handle,
+                                         const GuestHandleCloneFactory& clone_factory,
+                                         std::string_view vm_key);
 
-PluginHandleSharedPtr getOrCreateThreadLocalPlugin(const WasmHandleSharedPtr& base_wasm,
-                                                   const PluginSharedPtr& plugin,
-                                                   Event::Dispatcher& dispatcher);
+InitializedGuestHandleSharedPtr
+getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& uninitialized_guest,
+                                       const InitializedGuestSharedPtr& initialized_guest,
+                                       Event::Dispatcher& dispatcher);
 
-std::shared_ptr<PluginHandle> getOrCreateThreadLocalPlugin(
-    const std::shared_ptr<WasmHandle>& handle, const std::shared_ptr<Plugin>& plugin,
-    const WasmHandleCloneFactory& clone_factory, const PluginHandleFactory& plugin_factory);
+std::shared_ptr<InitializedGuestHandle> getOrCreateThreadLocalInitializedGuest(
+    const std::shared_ptr<GuestHandle>& handle,
+    const std::shared_ptr<InitializedGuest>& initialized_guest,
+    const GuestHandleCloneFactory& clone_factory,
+    const InitializedGuestHandleFactory& initialized_guest_factory);
 
 template <typename T> inline bool Wasm::setDatatype(uint64_t ptr, const T& t) {
   return runtime_->setMemory(ptr, sizeof(T), &t);
 }
 
-// WasmEvent toWasmEvent(const std::shared_ptr<WasmHandleBase>& wasm);
+// WasmEvent toWasmEvent(const std::shared_ptr<GuestHandleBase>& wasm);
 
 } // namespace HttpWasm
 } // namespace HttpFilters

@@ -39,7 +39,7 @@ WasmConfig::WasmConfig(const envoy::extensions::wasm::v3::PluginConfig& config) 
   }
 }
 
-std::string Plugin::makeLogPrefix() const {
+std::string InitializedGuest::makeLogPrefix() const {
   std::string prefix;
   if (!name_.empty()) {
     prefix = prefix + " " + name_;

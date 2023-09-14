@@ -45,7 +45,7 @@
 
 #define CHECK_FAIL(_stream_type, _stream_type2, _return_open, _return_closed)                      \
   if (isFailed()) {                                                                                \
-    if (plugin_->fail_open_) {                                                                     \
+    if (initialized_guest_->fail_open_) {                                                          \
       return _return_open;                                                                         \
     }                                                                                              \
     return _return_closed;                                                                         \
@@ -111,17 +111,21 @@ WasmResult Buffer::copyFrom(size_t start, std::string_view data, size_t length) 
 
 // Context::Context() = default;
 Context::Context(Wasm* wasm) : wasm_(wasm), parent_context_(this) { wasm_->contexts_[id_] = this; }
-Context::Context(Wasm* wasm, const PluginSharedPtr& plugin)
-    : wasm_(wasm), id_(wasm->allocContextId()), parent_context_(this), root_id_(plugin->root_id_),
-      root_log_prefix_(makeRootLogPrefix(plugin->vm_id_)), plugin_(plugin) {
+Context::Context(Wasm* wasm, const InitializedGuestSharedPtr& initialized_guest)
+    : wasm_(wasm), id_(wasm->allocContextId()), parent_context_(this),
+      root_id_(initialized_guest->root_id_),
+      root_log_prefix_(makeRootLogPrefix(initialized_guest->vm_id_)),
+      initialized_guest_(initialized_guest) {
   current_context_ = this;
-  root_local_info_ = &plugin->localInfo();
+  root_local_info_ = &initialized_guest->localInfo();
   wasm_->contexts_[id_] = this;
 }
-Context::Context(Wasm* wasm, uint32_t root_context_id, PluginHandleSharedPtr plugin_handle)
+Context::Context(Wasm* wasm, uint32_t root_context_id,
+                 InitializedGuestHandleSharedPtr initialized_guest_handle)
     : wasm_(wasm), id_(wasm != nullptr ? wasm->allocContextId() : 0),
-      parent_context_id_(parent_context_id_), plugin_(plugin_handle->plugin()),
-      plugin_handle_(plugin_handle) {
+      parent_context_id_(parent_context_id_),
+      initialized_guest_(initialized_guest_handle->initializedGuest()),
+      initialized_guest_handle_(initialized_guest_handle) {
   if (wasm_ != nullptr) {
     wasm_->contexts_[id_] = this;
     parent_context_ = wasm_->contexts_[parent_context_id_];
@@ -131,8 +135,9 @@ Context::Context(Wasm* wasm, uint32_t root_context_id, PluginHandleSharedPtr plu
 bool Context::isFailed() { return (wasm_ == nullptr || wasm_->isFailed()); }
 
 Runtime* Context::wasmVm() const { return wasm_->wasm_vm(); }
-// Plugin* Context::plugin() const { return static_cast<Plugin*>(plugin_.get()); }
-// Context* Context::rootContext() const { return static_cast<Context*>(root_context()); }
+// InitializedGuest* Context::initializedGuest() const { return
+// static_cast<InitializedGuest*>(initialized_guest_.get()); } Context* Context::rootContext() const
+// { return static_cast<Context*>(root_context()); }
 Upstream::ClusterManager& Context::clusterManager() const { return wasm()->clusterManager(); }
 
 void Context::error(std::string_view message) { ENVOY_LOG(trace, message); }
@@ -351,7 +356,7 @@ uint32_t Context::getLogLevel() {
   return static_cast<uint32_t>(ENVOY_LOGGER().level());
 }
 
-std::string_view Context::getConfiguration() { return plugin_->plugin_configuration_; };
+std::string_view Context::getConfiguration() { return initialized_guest_->configuration_; };
 
 Http::FilterHeadersStatus convertFilterHeadersStatus(FilterHeadersStatus status) {
   switch (status) {
