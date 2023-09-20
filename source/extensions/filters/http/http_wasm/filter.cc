@@ -8,12 +8,13 @@ namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
 
-FilterConfig::FilterConfig(const envoy::extensions::filters::http::http_wasm::v3::Wasm& config,
-                           Server::Configuration::FactoryContext& context)
+FilterConfig::FilterConfig(
+    const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config,
+    Server::Configuration::FactoryContext& context)
     : tls_slot_(ThreadLocal::TypedSlot<InitializedGuestHandleSharedPtrThreadLocal>::makeUnique(
           context.threadLocal())) {
   const auto initializedGuest = std::make_shared<InitializedGuest>(
-      config.config(), context.direction(), context.localInfo(), &context.listenerMetadata());
+      config, context.direction(), context.localInfo(), &context.listenerMetadata());
 
   auto callback = [initializedGuest, this](const GuestHandleSharedPtr& uninitialized_guest) {
     // NB: the Slot set() call doesn't complete inline, so all arguments must outlive this call.

@@ -8,7 +8,7 @@
 
 #include "envoy/access_log/access_log.h"
 #include "envoy/buffer/buffer.h"
-#include "envoy/extensions/wasm/v3/wasm.pb.validate.h"
+//#include "envoy/extensions/wasm/v3/wasm.pb.validate.h"
 #include "envoy/http/filter.h"
 #include "envoy/stats/sink.h"
 #include "envoy/upstream/cluster_manager.h"
@@ -29,17 +29,17 @@ namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
 
-using VmConfig = envoy::extensions::wasm::v3::VmConfig;
-using CapabilityRestrictionConfig = envoy::extensions::wasm::v3::CapabilityRestrictionConfig;
+// using VmConfig = envoy::extensions::wasm::v3::VmConfig;
+// using CapabilityRestrictionConfig = envoy::extensions::wasm::v3::CapabilityRestrictionConfig;
 
 class InitializedGuestHandle;
 class InitializedGuest;
-class Wasm;
-class WasmHandle;
+class Guest;
+class GuestHandle;
 
 using InitializedGuestSharedPtr = std::shared_ptr<InitializedGuest>;
 using InitializedGuestHandleSharedPtr = std::shared_ptr<InitializedGuestHandle>;
-using WasmHandleSharedPtr = std::shared_ptr<WasmHandle>;
+using GuestHandleSharedPtr = std::shared_ptr<GuestHandle>;
 
 class Buffer {
 public:
@@ -79,14 +79,14 @@ class Context : public Logger::Loggable<Logger::Id::wasm>,
                 public Http::StreamFilter,
                 public std::enable_shared_from_this<Context> {
 public:
-  Context() = default;                                                     // Testing.
-  Context(Wasm* wasm);                                                     // Vm Context.
-  Context(Wasm* wasm, const InitializedGuestSharedPtr& initialized_guest); // Root Context.
-  Context(Wasm* wasm, uint32_t root_context_id,
+  Context() = default;                                                       // Testing.
+  Context(Guest* guest);                                                     // Vm Context.
+  Context(Guest* guest, const InitializedGuestSharedPtr& initialized_guest); // Root Context.
+  Context(Guest* guest, uint32_t root_context_id,
           InitializedGuestHandleSharedPtr initialized_guest_handle); // Stream context.
   ~Context() override;
 
-  Wasm* wasm() const { return wasm_; }
+  Guest* guest() const { return guest_; }
   // virtual void maybeAddContentLength(uint64_t content_length);
   uint32_t id() const { return id_; }
   // Root Contexts have the VM Context as a parent.
@@ -106,7 +106,7 @@ public:
   }
   Upstream::ClusterManager& clusterManager() const;
   void maybeAddContentLength(uint64_t content_length);
-  Runtime* wasmVm() const;
+  Runtime* runtime() const;
 
   void error(std::string_view message);
 
@@ -191,7 +191,7 @@ public:
   }
 
 protected:
-  friend class Wasm;
+  friend class Guest;
   Http::HeaderMap* getMap(WasmHeaderMapType type);
   const Http::HeaderMap* getConstMap(WasmHeaderMapType type);
 
@@ -218,8 +218,7 @@ protected:
   bool buffering_response_body_ = false;
   bool end_of_stream_ = false;
 
-  std::string makeRootLogPrefix(std::string_view vm_id) const;
-  Wasm* wasm_{nullptr};
+  Guest* guest_{nullptr};
   uint32_t id_{0};
   uint32_t parent_context_id_{0};                       // 0 for roots and the general context.
   std::string root_id_;                                 // set only in root context.

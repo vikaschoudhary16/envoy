@@ -29,7 +29,7 @@ Word get_config(Word value_ptr, Word value_size) {
   if (value.size() > value_size) {
     return 0;
   }
-  context->wasmVm()->setMemory(value_ptr, value.size(), (void*)value.data());
+  context->runtime()->setMemory(value_ptr, value.size(), (void*)value.data());
   return value.size();
 }
 
@@ -41,7 +41,7 @@ Word enable_features(Word features) {
 // Logging ABIs...
 Word log_enabled(Word log_level) {
   auto* context = contextOrEffectiveContext();
-  return context->wasmVm()->cmpLogLevel(static_cast<LogLevel>(log_level.u64_));
+  return context->runtime()->cmpLogLevel(static_cast<LogLevel>(log_level.u64_));
 }
 
 void log(Word level, Word address, Word size) {
@@ -49,7 +49,7 @@ void log(Word level, Word address, Word size) {
     return;
   }
   auto* context = contextOrEffectiveContext();
-  auto message = context->wasmVm()->getMemory(address, size);
+  auto message = context->runtime()->getMemory(address, size);
   if (!message) {
     return;
   }
@@ -70,13 +70,13 @@ Word get_method(Word buf, Word buf_len) {
   if (values[0].size() > buf_len) {
     return 0;
   }
-  context->wasmVm()->setMemory(buf, values[0].size(), (void*)values[0].data());
+  context->runtime()->setMemory(buf, values[0].size(), (void*)values[0].data());
   return values[0].size();
 }
 
 void set_method(Word buf, Word buf_len) {
   auto* context = contextOrEffectiveContext();
-  auto value = context->wasmVm()->getMemory(buf, buf_len);
+  auto value = context->runtime()->getMemory(buf, buf_len);
   context->replaceHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":method", value.value());
 }
 
@@ -93,13 +93,13 @@ Word get_uri(Word uri, Word uri_len) {
   if (values[0].size() > uri_len) {
     return 0;
   }
-  context->wasmVm()->setMemory(uri, values[0].size(), (void*)values[0].data());
+  context->runtime()->setMemory(uri, values[0].size(), (void*)values[0].data());
   return values[0].size();
 }
 
 void set_uri(Word buf, Word buf_len) {
   auto* context = contextOrEffectiveContext();
-  auto value = context->wasmVm()->getMemory(buf, buf_len);
+  auto value = context->runtime()->getMemory(buf, buf_len);
   context->replaceHeaderMapValue(WasmHeaderMapType::RequestHeaders, ":path", value.value());
 }
 
@@ -111,7 +111,7 @@ Word get_protocol_version(Word buf, Word buf_len) {
   if (version.size() > buf_len) {
     return 0;
   }
-  context->wasmVm()->setMemory(buf, version.size(), (void*)version.data());
+  context->runtime()->setMemory(buf, version.size(), (void*)version.data());
   return version.size();
 }
 
@@ -132,8 +132,8 @@ int64_t get_header_names(Word kind, Word buffer, Word buffer_length) {
       return 0;
     }
     auto separator = std::uint8_t(0); // Separator byte
-    context->wasmVm()->setMemory(buffer + totalCopied, name.size(), (void*)name.data());
-    context->wasmVm()->setMemory(buffer + totalCopied + name.size(), 1, (void*)(&separator));
+    context->runtime()->setMemory(buffer + totalCopied, name.size(), (void*)name.data());
+    context->runtime()->setMemory(buffer + totalCopied + name.size(), 1, (void*)(&separator));
     totalCopied += name.size() + 1;
   }
 
@@ -144,7 +144,7 @@ int64_t get_header_names(Word kind, Word buffer, Word buffer_length) {
 int64_t get_header_values(Word kind, Word name, Word name_len, Word buffer, Word buffer_length) {
   auto* context = contextOrEffectiveContext();
   std::vector<std::string_view> nameValues;
-  auto key = context->wasmVm()->getMemory(name, name_len);
+  auto key = context->runtime()->getMemory(name, name_len);
   auto result = context->getHeaderMapValue(static_cast<WasmHeaderMapType>(kind.u64_), key.value(),
                                            nameValues);
   if (result != WasmResult::Ok) {
@@ -159,8 +159,8 @@ int64_t get_header_values(Word kind, Word name, Word name_len, Word buffer, Word
       return 0;
     }
     auto separator = std::uint8_t(0); // Separator byte
-    context->wasmVm()->setMemory(buffer + totalCopied, nameValue.size(), (void*)nameValue.data());
-    context->wasmVm()->setMemory(buffer + totalCopied + nameValue.size(), 1, (void*)(&separator));
+    context->runtime()->setMemory(buffer + totalCopied, nameValue.size(), (void*)nameValue.data());
+    context->runtime()->setMemory(buffer + totalCopied + nameValue.size(), 1, (void*)(&separator));
     totalCopied += nameValue.size() + 1;
   }
 
@@ -170,8 +170,8 @@ int64_t get_header_values(Word kind, Word name, Word name_len, Word buffer, Word
 
 void set_header_value(Word kind, Word name, Word name_len, Word val, Word value_len) {
   auto* context = contextOrEffectiveContext();
-  auto key = context->wasmVm()->getMemory(name, name_len);
-  auto value = context->wasmVm()->getMemory(val, value_len);
+  auto key = context->runtime()->getMemory(name, name_len);
+  auto value = context->runtime()->getMemory(val, value_len);
   if (key && value) {
     context->replaceHeaderMapValue(static_cast<WasmHeaderMapType>(kind.u64_), key.value(),
                                    value.value());
@@ -180,7 +180,7 @@ void set_header_value(Word kind, Word name, Word name_len, Word val, Word value_
 
 void remove_header(Word kind, Word name, Word name_len) {
   auto* context = contextOrEffectiveContext();
-  auto key = context->wasmVm()->getMemory(name, name_len);
+  auto key = context->runtime()->getMemory(name, name_len);
   if (key) {
     context->removeHeaderMapValue(static_cast<WasmHeaderMapType>(kind.u64_), key.value());
   }
@@ -188,8 +188,8 @@ void remove_header(Word kind, Word name, Word name_len) {
 
 void add_header_value(Word kind, Word name, Word name_len, Word val, Word value_len) {
   auto* context = contextOrEffectiveContext();
-  auto key = context->wasmVm()->getMemory(name, name_len);
-  auto value = context->wasmVm()->getMemory(val, value_len);
+  auto key = context->runtime()->getMemory(name, name_len);
+  auto value = context->runtime()->getMemory(val, value_len);
   if (key && value) {
     context->addHeaderMapValue(WasmHeaderMapType::RequestHeaders, key.value(), value.value());
   }
@@ -205,7 +205,7 @@ int64_t read_body(Word kind, Word val, Word size) {
   if (buffer == nullptr) {
     return 0;
   }
-  auto targetMemory = context->wasmVm()->getMemory(val.u64_, size);
+  auto targetMemory = context->runtime()->getMemory(val.u64_, size);
   if (!targetMemory) {
     return 0;
   }
@@ -219,7 +219,7 @@ void write_body(Word kind, Word val, Word size) {
     return;
   }
   auto* context = contextOrEffectiveContext();
-  auto srcMemory = context->wasmVm()->getMemory(val.u64_, size);
+  auto srcMemory = context->runtime()->getMemory(val.u64_, size);
   if (!srcMemory) {
     // TODO: trap
     return;
@@ -300,15 +300,15 @@ Word writevImpl(Word fd, Word iovs, Word iovs_len, Word* nwritten_ptr) {
   std::string s;
   for (size_t i = 0; i < iovs_len; i++) {
     auto memslice =
-        context->wasmVm()->getMemory(iovs + i * 2 * sizeof(uint32_t), 2 * sizeof(uint32_t));
+        context->runtime()->getMemory(iovs + i * 2 * sizeof(uint32_t), 2 * sizeof(uint32_t));
     if (!memslice) {
       return 21; // __WASI_EFAULT
     }
     const auto* iovec = reinterpret_cast<const uint32_t*>(memslice.value().data());
     if (iovec[1] != 0U /* buf_len */) {
-      const auto buf = wasmtoh(iovec[0], context->wasmVm()->usesWasmByteOrder());
-      const auto buf_len = wasmtoh(iovec[1], context->wasmVm()->usesWasmByteOrder());
-      memslice = context->wasmVm()->getMemory(buf, buf_len);
+      const auto buf = wasmtoh(iovec[0], context->runtime()->usesWasmByteOrder());
+      const auto buf_len = wasmtoh(iovec[1], context->runtime()->usesWasmByteOrder());
+      memslice = context->runtime()->getMemory(buf, buf_len);
       if (!memslice) {
         return 21; // __WASI_EFAULT
       }
@@ -340,7 +340,7 @@ Word wasi_unstable_fd_write(Word fd, Word iovs, Word iovs_len, Word nwritten_ptr
   if (result != 0) { // __WASI_ESUCCESS
     return result;
   }
-  if (!context->wasmVm()->setWord(nwritten_ptr, Word(nwritten))) {
+  if (!context->runtime()->setWord(nwritten_ptr, Word(nwritten))) {
     return 21; // __WASI_EFAULT
   }
   return 0; // __WASI_ESUCCESS
@@ -390,7 +390,7 @@ Word wasi_unstable_fd_fdstat_get(Word fd, Word statOut) {
   wasi_fdstat[2] = 0;
 
   auto* context = contextOrEffectiveContext();
-  context->wasmVm()->setMemory(statOut, 3 * sizeof(uint64_t), &wasi_fdstat);
+  context->runtime()->setMemory(statOut, 3 * sizeof(uint64_t), &wasi_fdstat);
 
   return 0; // __WASI_ESUCCESS
 }
@@ -398,10 +398,10 @@ Word wasi_unstable_fd_fdstat_get(Word fd, Word statOut) {
 // __wasi_errno_t __wasi_environ_get(char **environ, char *environ_buf);
 Word wasi_unstable_environ_get(Word environ_array_ptr, Word environ_buf) {
   auto* context = contextOrEffectiveContext();
-  auto word_size = context->wasmVm()->getWordSize();
-  const auto& envs = context->wasm()->envs();
+  auto word_size = context->runtime()->getWordSize();
+  const auto& envs = context->guest()->envs();
   for (const auto& e : envs) {
-    if (!context->wasmVm()->setWord(environ_array_ptr, environ_buf)) {
+    if (!context->runtime()->setWord(environ_array_ptr, environ_buf)) {
       return 21; // __WASI_EFAULT
     }
 
@@ -411,7 +411,7 @@ Word wasi_unstable_environ_get(Word environ_array_ptr, Word environ_buf) {
     data.append("=");
     data.append(e.second);
     data.append({0x0});
-    if (!context->wasmVm()->setMemory(environ_buf, data.size(), data.c_str())) {
+    if (!context->runtime()->setMemory(environ_buf, data.size(), data.c_str())) {
       return 21; // __WASI_EFAULT
     }
     environ_buf = environ_buf.u64_ + data.size();
@@ -425,8 +425,8 @@ Word wasi_unstable_environ_get(Word environ_array_ptr, Word environ_buf) {
 // *environ_buf_size);
 Word wasi_unstable_environ_sizes_get(Word count_ptr, Word buf_size_ptr) {
   auto* context = contextOrEffectiveContext();
-  const auto& envs = context->wasm()->envs();
-  if (!context->wasmVm()->setWord(count_ptr, Word(envs.size()))) {
+  const auto& envs = context->guest()->envs();
+  if (!context->runtime()->setWord(count_ptr, Word(envs.size()))) {
     return 21; // __WASI_EFAULT
   }
 
@@ -435,7 +435,7 @@ Word wasi_unstable_environ_sizes_get(Word count_ptr, Word buf_size_ptr) {
     // len(key) + len(value) + 1('=') + 1(null terminator)
     size += e.first.size() + e.second.size() + 2;
   }
-  if (!context->wasmVm()->setWord(buf_size_ptr, Word(size))) {
+  if (!context->runtime()->setWord(buf_size_ptr, Word(size))) {
     return 21; // __WASI_EFAULT
   }
   return 0; // __WASI_ESUCCESS
@@ -449,10 +449,10 @@ Word wasi_unstable_args_get(Word /*argv_array_ptr*/, Word /*argv_buf_ptr*/) {
 // __wasi_errno_t __wasi_args_sizes_get(size_t *argc, size_t *argv_buf_size);
 Word wasi_unstable_args_sizes_get(Word argc_ptr, Word argv_buf_size_ptr) {
   auto* context = contextOrEffectiveContext();
-  if (!context->wasmVm()->setWord(argc_ptr, Word(0))) {
+  if (!context->runtime()->setWord(argc_ptr, Word(0))) {
     return 21; // __WASI_EFAULT
   }
-  if (!context->wasmVm()->setWord(argv_buf_size_ptr, Word(0))) {
+  if (!context->runtime()->setWord(argv_buf_size_ptr, Word(0))) {
     return 21; // __WASI_EFAULT
   }
   return 0; // __WASI_ESUCCESS
@@ -475,7 +475,7 @@ Word wasi_unstable_clock_time_get(Word clock_id, uint64_t /*precision*/,
     // process_cputime_id and thread_cputime_id are not supported yet.
     return 58; // __WASI_ENOTSUP
   }
-  if (!context->wasm()->setDatatype(result_time_uint64_ptr, result)) {
+  if (!context->guest()->setDatatype(result_time_uint64_ptr, result)) {
     return 21; // __WASI_EFAULT
   }
   return 0; // __WASI_ESUCCESS

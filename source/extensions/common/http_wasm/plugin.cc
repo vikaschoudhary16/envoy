@@ -8,9 +8,10 @@ namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
 
-WasmConfig::WasmConfig(const envoy::extensions::wasm::v3::PluginConfig& config) : config_(config) {
-  if (config_.vm_config().has_environment_variables()) {
-    const auto& envs = config_.vm_config().environment_variables();
+WasmConfig::WasmConfig(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config)
+    : config_(config) {
+  if (config.has_environment_variables()) {
+    const auto& envs = config_.environment_variables();
 
     // Check key duplication.
     absl::flat_hash_set<std::string> keys;
@@ -43,12 +44,6 @@ std::string InitializedGuest::makeLogPrefix() const {
   std::string prefix;
   if (!name_.empty()) {
     prefix = prefix + " " + name_;
-  }
-  if (!root_id_.empty()) {
-    prefix = prefix + " " + std::string(root_id_);
-  }
-  if (!vm_id_.empty()) {
-    prefix = prefix + " " + std::string(vm_id_);
   }
   return prefix;
 }

@@ -13,8 +13,8 @@ namespace HttpFilters {
 namespace HttpWasm {
 
 Http::FilterFactoryCb HttpWasmFilterConfig::createFilterFactoryFromProtoTyped(
-    const envoy::extensions::filters::http::http_wasm::v3::Wasm& proto_config, const std::string&,
-    Server::Configuration::FactoryContext& context) {
+    const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& proto_config,
+    const std::string&, Server::Configuration::FactoryContext& context) {
   auto filter_config = std::make_shared<FilterConfig>(proto_config, context);
   return [filter_config](Http::FilterChainFactoryCallbacks& callbacks) -> void {
     auto filter = filter_config->createFilter();

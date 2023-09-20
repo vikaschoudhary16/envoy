@@ -254,20 +254,14 @@ bool V8::load(std::string_view bytecode, std::string_view precompiled,
   }
 
   if (!precompiled.empty()) {
-    auto vec = wasm::vec<byte_t>::make_uninitialized(precompiled.size());
-    ::memcpy(vec.get(), precompiled.data(), precompiled.size());
-    module_ = wasm::Module::deserialize(store_.get(), vec);
-    if (module_ == nullptr) {
-      return false;
-    }
+    return false;
+  }
 
-  } else {
-    auto vec = wasm::vec<byte_t>::make_uninitialized(bytecode.size());
-    ::memcpy(vec.get(), bytecode.data(), bytecode.size());
-    module_ = wasm::Module::make(store_.get(), vec);
-    if (module_ == nullptr) {
-      return false;
-    }
+  auto vec = wasm::vec<byte_t>::make_uninitialized(bytecode.size());
+  ::memcpy(vec.get(), bytecode.data(), bytecode.size());
+  module_ = wasm::Module::make(store_.get(), vec);
+  if (module_ == nullptr) {
+    return false;
   }
 
   shared_module_ = module_->share();

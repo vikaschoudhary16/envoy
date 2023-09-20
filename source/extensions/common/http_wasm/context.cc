@@ -14,7 +14,7 @@
 #include <string>
 
 #include "envoy/common/exception.h"
-#include "envoy/extensions/wasm/v3/wasm.pb.validate.h"
+#include "envoy/extensions/filters/http/http_wasm/v3/wasm.pb.validate.h"
 #include "envoy/grpc/status.h"
 #include "envoy/http/codes.h"
 #include "envoy/local_info/local_info.h"
@@ -109,36 +109,36 @@ WasmResult Buffer::copyFrom(size_t start, std::string_view data, size_t length) 
   return WasmResult::Ok;
 }
 
-// Context::Context() = default;
-Context::Context(Wasm* wasm) : wasm_(wasm), parent_context_(this) { wasm_->contexts_[id_] = this; }
-Context::Context(Wasm* wasm, const InitializedGuestSharedPtr& initialized_guest)
-    : wasm_(wasm), id_(wasm->allocContextId()), parent_context_(this),
-      root_id_(initialized_guest->root_id_),
-      root_log_prefix_(makeRootLogPrefix(initialized_guest->vm_id_)),
+Context::Context(Guest* wasm) : guest_(wasm), parent_context_(this) {
+  guest_->contexts_[id_] = this;
+}
+Context::Context(Guest* wasm, const InitializedGuestSharedPtr& initialized_guest)
+    : guest_(wasm), id_(wasm->allocContextId()), parent_context_(this),
+      root_id_(initialized_guest->name_), root_log_prefix_(initialized_guest->name_),
       initialized_guest_(initialized_guest) {
   current_context_ = this;
   root_local_info_ = &initialized_guest->localInfo();
-  wasm_->contexts_[id_] = this;
+  guest_->contexts_[id_] = this;
 }
-Context::Context(Wasm* wasm, uint32_t root_context_id,
+Context::Context(Guest* wasm, uint32_t root_context_id,
                  InitializedGuestHandleSharedPtr initialized_guest_handle)
-    : wasm_(wasm), id_(wasm != nullptr ? wasm->allocContextId() : 0),
+    : guest_(wasm), id_(wasm != nullptr ? wasm->allocContextId() : 0),
       parent_context_id_(parent_context_id_),
       initialized_guest_(initialized_guest_handle->initializedGuest()),
       initialized_guest_handle_(initialized_guest_handle) {
-  if (wasm_ != nullptr) {
-    wasm_->contexts_[id_] = this;
-    parent_context_ = wasm_->contexts_[parent_context_id_];
+  if (guest_ != nullptr) {
+    guest_->contexts_[id_] = this;
+    parent_context_ = guest_->contexts_[parent_context_id_];
   }
 }
 
-bool Context::isFailed() { return (wasm_ == nullptr || wasm_->isFailed()); }
+bool Context::isFailed() { return (guest_ == nullptr || guest_->isFailed()); }
 
-Runtime* Context::wasmVm() const { return wasm_->wasm_vm(); }
+Runtime* Context::runtime() const { return guest_->runtime(); }
 // InitializedGuest* Context::initializedGuest() const { return
 // static_cast<InitializedGuest*>(initialized_guest_.get()); } Context* Context::rootContext() const
 // { return static_cast<Context*>(root_context()); }
-Upstream::ClusterManager& Context::clusterManager() const { return wasm()->clusterManager(); }
+Upstream::ClusterManager& Context::clusterManager() const { return guest()->clusterManager(); }
 
 void Context::error(std::string_view message) { ENVOY_LOG(trace, message); }
 
@@ -289,17 +289,6 @@ WasmResult Context::getHeaderMapSize(WasmHeaderMapType type, uint32_t* result) {
   }
   *result = map->byteSize();
   return WasmResult::Ok;
-}
-
-std::string Context::makeRootLogPrefix(std::string_view vm_id) const {
-  std::string prefix;
-  if (!root_id_.empty()) {
-    prefix = prefix + " " + std::string(root_id_);
-  }
-  if (!vm_id.empty()) {
-    prefix = prefix + " " + std::string(vm_id);
-  }
-  return prefix;
 }
 
 // Buffer
@@ -629,15 +618,15 @@ FilterMetadataStatus Context::convertVmCallResultToFilterMetadataStatus(uint64_t
 }
 
 Context::~Context() {
-  // Do not remove vm context which has the same lifetime as wasm_.
+  // Do not remove vm context which has the same lifetime as guest_.
   if (id_ != 0U) {
-    wasm_->contexts_.erase(id_);
+    guest_->contexts_.erase(id_);
   }
 }
 
 FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
-  const auto result = wasm_->handle_request_(this);
+  const auto result = guest_->handle_request_(this);
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
   request_context_ = uint32_t(result >> 32);
   uint32_t next = uint32_t(result);
@@ -647,7 +636,7 @@ FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stre
 
 FilterDataStatus Context::onRequestBody(uint32_t body_length, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
-  const auto result = wasm_->handle_request_(this);
+  const auto result = guest_->handle_request_(this);
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
   request_context_ = uint32_t(result >> 32);
   uint32_t next = uint32_t(result);
@@ -667,13 +656,13 @@ FilterMetadataStatus Context::onRequestMetadata(uint32_t elements) {
 FilterHeadersStatus Context::onResponseHeaders(uint32_t headers, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
   ENVOY_LOG(debug, "onResponseHeaders: {} ", request_context_);
-  wasm_->handle_response_(this, request_context_, 0);
+  guest_->handle_response_(this, request_context_, 0);
   return FilterHeadersStatus::Continue;
 }
 
 FilterDataStatus Context::onResponseBody(uint32_t body_length, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
-  wasm_->handle_response_(this, request_context_, 0);
+  guest_->handle_response_(this, request_context_, 0);
   return FilterDataStatus::Continue;
 }
 

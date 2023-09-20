@@ -85,14 +85,14 @@ Word wasi_unstable_path_unlink_file(Word fd, Word path, Word path_len);
   template <typename... Args> struct _fn##Stub<Word(Args...)> {                                    \
     static Word stub(Args...) {                                                                    \
       auto context = contextOrEffectiveContext();                                                  \
-      context->wasmVm()->logger()->error("Attempted call to restricted WASI capability: " #_fn);   \
+      context->runtime()->logger()->error("Attempted call to restricted WASI capability: " #_fn);  \
       return 76; /* __WASI_ENOTCAPABLE */                                                          \
     }                                                                                              \
   };                                                                                               \
   template <typename... Args> struct _fn##Stub<void(Args...)> {                                    \
     static void stub(Args...) {                                                                    \
       auto context = contextOrEffectiveContext();                                                  \
-      context->wasmVm()->logger()->error("Attempted call to restricted WASI capability: " #_fn);   \
+      context->runtime()->logger()->error("Attempted call to restricted WASI capability: " #_fn);  \
     }                                                                                              \
   };
 FOR_ALL_WASI_FUNCTIONS(_CREATE_WASI_STUB)

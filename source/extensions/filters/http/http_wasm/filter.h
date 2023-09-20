@@ -18,11 +18,11 @@ namespace HttpWasm {
 
 class FilterConfig : Logger::Loggable<Logger::Id::wasm> {
 public:
-  FilterConfig(const envoy::extensions::filters::http::http_wasm::v3::Wasm& config,
+  FilterConfig(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config,
                Server::Configuration::FactoryContext& context);
 
   std::shared_ptr<Context> createFilter() {
-    Wasm* wasm = nullptr;
+    Guest* wasm = nullptr;
     if (!tls_slot_->currentThreadRegistered()) {
       return nullptr;
     }

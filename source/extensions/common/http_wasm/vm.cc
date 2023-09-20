@@ -19,7 +19,7 @@ thread_local std::unordered_map<std::string, std::weak_ptr<InitializedGuestHandl
     local_initialized_guests;
 const std::string INLINE_STRING = "<inline>";
 
-inline Wasm* getWasm(GuestHandleSharedPtr& guest_handle) { return guest_handle->guest().get(); }
+inline Guest* getGuest(GuestHandleSharedPtr& guest_handle) { return guest_handle->guest().get(); }
 
 std::vector<uint8_t> Sha256(const std::vector<std::string_view>& parts) {
   uint8_t sha256[SHA256_DIGEST_LENGTH];
@@ -49,8 +49,8 @@ std::string makeVmKey(std::string_view vm_id, std::string_view vm_configuration,
   return BytesToHex(Sha256({vm_id, vm_configuration, code}));
 }
 
-void Wasm::initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notifier) {
-  auto weak = std::weak_ptr<Wasm>(std::static_pointer_cast<Wasm>(shared_from_this()));
+void Guest::initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notifier) {
+  auto weak = std::weak_ptr<Guest>(std::static_pointer_cast<Guest>(shared_from_this()));
   lifecycle_notifier.registerCallback(Server::ServerLifecycleNotifier::Stage::ShutdownExit,
                                       [this, weak](Event::PostCb post_cb) {
                                         auto lock = weak.lock();
@@ -60,8 +60,9 @@ void Wasm::initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notifi
                                       });
 }
 
-Wasm::Wasm(WasmConfig& config, absl::string_view vm_key, const Stats::ScopeSharedPtr& scope,
-           Api::Api& api, Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher)
+Guest::Guest(WasmConfig& config, absl::string_view vm_key, const Stats::ScopeSharedPtr& scope,
+             Api::Api& api, Upstream::ClusterManager& cluster_manager,
+             Event::Dispatcher& dispatcher)
     : scope_(scope), api_(api), stat_name_pool_(scope_->symbolTable()),
       cluster_manager_(cluster_manager), dispatcher_(dispatcher),
       time_source_(dispatcher.timeSource()), runtime_(createV8Client()) {
@@ -73,35 +74,35 @@ Wasm::Wasm(WasmConfig& config, absl::string_view vm_key, const Stats::ScopeShare
   }
   runtime_->addFailCallback([this](FailState fail_state) { failed_ = fail_state; });
   // lifecycle_stats_handler_.onEvent(Common::Wasm::WasmEvent::VmCreated);
-  ENVOY_LOG(debug, "Wasm VM created now active");
+  ENVOY_LOG(debug, "Guest created now active");
 }
 
-Wasm::Wasm(GuestHandleSharedPtr guest_handle, Event::Dispatcher& dispatcher)
-    : std::enable_shared_from_this<Wasm>(*guest_handle->guest()),
-      scope_(getWasm(guest_handle)->scope_), api_(getWasm(guest_handle)->api_),
+Guest::Guest(GuestHandleSharedPtr guest_handle, Event::Dispatcher& dispatcher)
+    : std::enable_shared_from_this<Guest>(*guest_handle->guest()),
+      scope_(getGuest(guest_handle)->scope_), api_(getGuest(guest_handle)->api_),
       stat_name_pool_(scope_->symbolTable()),
-      cluster_manager_(getWasm(guest_handle)->clusterManager()), dispatcher_(dispatcher),
+      cluster_manager_(getGuest(guest_handle)->clusterManager()), dispatcher_(dispatcher),
       time_source_(dispatcher.timeSource()) {
   parent_guest_handle_ = guest_handle;
-  runtime_ = guest_handle->guest()->wasm_vm()->clone();
+  runtime_ = guest_handle->guest()->runtime()->clone();
   if (!runtime_) {
     failed_ = FailState::UnableToCreateVm;
     return;
   }
   runtime_->addFailCallback([this](FailState fail_state) { failed_ = fail_state; });
-  ENVOY_LOG(debug, "Thread-Local Wasm vm created now active");
+  ENVOY_LOG(debug, "Thread-Local Guest created now active");
 }
 
-void Wasm::error(std::string_view message) { ENVOY_LOG(error, "Wasm VM failed {}", message); }
+void Guest::error(std::string_view message) { ENVOY_LOG(error, "Guest VM failed {}", message); }
 
-Wasm::~Wasm() {
-  ENVOY_LOG(debug, "~Wasm remaining active");
+Guest::~Guest() {
+  ENVOY_LOG(debug, "~Guest remaining active");
   if (server_shutdown_post_cb_) {
     dispatcher_.post(std::move(server_shutdown_post_cb_));
   }
 }
 
-uint32_t Wasm::allocContextId() {
+uint32_t Guest::allocContextId() {
   while (true) {
     auto id = next_context_id_++;
     // Prevent reuse.
@@ -111,7 +112,7 @@ uint32_t Wasm::allocContextId() {
   }
 }
 
-void Wasm::registerCallbacks() {
+void Guest::registerCallbacks() {
 #define _REGISTER(_fn)                                                                             \
   runtime_->registerCallback(                                                                      \
       "env", #_fn, &exports::_fn,                                                                  \
@@ -143,7 +144,7 @@ void Wasm::registerCallbacks() {
 #undef _REGISTER
 }
 
-void Wasm::getFunctions() {
+void Guest::getFunctions() {
 #define _GET(_fn) runtime_->getFunction(#_fn, &_fn##_);
 #define _GET_ALIAS(_fn, _alias) runtime_->getFunction(#_alias, &_fn##_);
   _GET(_initialize);
@@ -168,15 +169,15 @@ void Wasm::getFunctions() {
 #undef _GET_PROXY
 }
 
-Context* Wasm::createContext(const std::shared_ptr<InitializedGuest>& initialized_guest) {
+Context* Guest::createContext(const std::shared_ptr<InitializedGuest>& initialized_guest) {
   return new Context(this, initialized_guest);
 }
 
-Context* Wasm::createRootContext(const std::shared_ptr<InitializedGuest>& initialized_guest) {
+Context* Guest::createRootContext(const std::shared_ptr<InitializedGuest>& initialized_guest) {
   return new Context(this, initialized_guest);
 }
 
-bool Wasm::load(const std::string& code, bool allow_precompiled) {
+bool Guest::load(const std::string& code) {
   assert(!started_from_.has_value());
 
   if (!runtime_) {
@@ -192,50 +193,37 @@ bool Wasm::load(const std::string& code, bool allow_precompiled) {
 
   // Get function names from the module.
   if (!BytecodeUtil::getFunctionNameIndex(code, function_names_)) {
-    fail(FailState::UnableToInitializeCode, "Failed to parse corrupted Wasm module");
+    fail(FailState::UnableToInitializeCode, "Failed to parse corrupted Guest module");
     return false;
-  }
-
-  std::string_view precompiled = {};
-
-  if (allow_precompiled) {
-    // Check if precompiled module exists.
-    const auto section_name = runtime_->getPrecompiledSectionName();
-    if (!section_name.empty()) {
-      if (!BytecodeUtil::getCustomSection(code, section_name, precompiled)) {
-        fail(FailState::UnableToInitializeCode, "Failed to parse corrupted Wasm module");
-        return false;
-      }
-    }
   }
 
   // Get original bytecode (possibly stripped).
   std::string stripped;
   if (!BytecodeUtil::getStrippedSource(code, stripped)) {
-    fail(FailState::UnableToInitializeCode, "Failed to parse corrupted Wasm module");
+    fail(FailState::UnableToInitializeCode, "Failed to parse corrupted Guest module");
     return false;
   }
 
-  auto ok = runtime_->load(stripped, precompiled, function_names_);
+  auto ok = runtime_->load(stripped, "" /*precompiled*/, function_names_);
   if (!ok) {
-    fail(FailState::UnableToInitializeCode, "Failed to load Wasm bytecode");
+    fail(FailState::UnableToInitializeCode, "Failed to load Guest bytecode");
     return false;
   }
 
   return true;
 }
 
-bool Wasm::initializeAndStart(Context* initialized_guest_context) {
+bool Guest::initializeAndStart(Context* initialized_guest_context) {
   if (!runtime_) {
     return false;
   }
   // TODO(vikas): I think we can remove this whole Cloneable thing.
   if (started_from_ == Cloneable::NotCloneable) {
-    auto ok = runtime_->load(parent_guest_handle_->guest()->moduleBytecode(),
-                             parent_guest_handle_->guest()->modulePrecompiled(),
-                             parent_guest_handle_->guest()->functionNames());
+    auto ok =
+        runtime_->load(parent_guest_handle_->guest()->moduleBytecode(),
+                       /*modulePrecompiled*/ "", parent_guest_handle_->guest()->functionNames());
     if (!ok) {
-      fail(FailState::UnableToInitializeCode, "Failed to load Wasm module from base Wasm");
+      fail(FailState::UnableToInitializeCode, "Failed to load Guest module from base Guest");
       return false;
     }
   }
@@ -249,13 +237,13 @@ bool Wasm::initializeAndStart(Context* initialized_guest_context) {
   getFunctions();
   if (started_from_ != Cloneable::InstantiatedModule) {
     // Base VM was already started, so don't try to start cloned VMs again.
-    startVm(initialized_guest_context);
+    start(initialized_guest_context);
   }
 
   return !isFailed();
 }
 
-void Wasm::startVm(Context* root_context) {
+void Guest::start(Context* root_context) {
   if (_initialize_) {
     // WASI reactor.
     _initialize_(root_context);
@@ -273,7 +261,7 @@ void Wasm::startVm(Context* root_context) {
   }
 }
 
-Context* Wasm::getOrCreateInitializedGuestContext(
+Context* Guest::getOrCreateInitializedGuestContext(
     const std::shared_ptr<InitializedGuest>& initialized_guest) {
   auto context = std::unique_ptr<Context>(createRootContext(initialized_guest));
   auto* context_ptr = context.get();
@@ -287,8 +275,8 @@ getGuestHandleFactory(WasmConfig& wasm_config, const Stats::ScopeSharedPtr& scop
                       Server::ServerLifecycleNotifier& lifecycle_notifier) {
   return [&wasm_config, &scope, &api, &cluster_manager, &dispatcher,
           &lifecycle_notifier](std::string_view vm_key) -> GuestHandleSharedPtr {
-    auto wasm = std::make_shared<Wasm>(wasm_config, toAbslStringView(vm_key), scope, api,
-                                       cluster_manager, dispatcher);
+    auto wasm = std::make_shared<Guest>(wasm_config, toAbslStringView(vm_key), scope, api,
+                                        cluster_manager, dispatcher);
     wasm->initializeLifecycle(lifecycle_notifier);
     return std::make_shared<GuestHandle>(std::move(wasm));
   };
@@ -296,7 +284,7 @@ getGuestHandleFactory(WasmConfig& wasm_config, const Stats::ScopeSharedPtr& scop
 
 static GuestHandleCloneFactory getGuestHandleCloneFactory(Event::Dispatcher& dispatcher) {
   return [&dispatcher](GuestHandleSharedPtr wasm) -> std::shared_ptr<GuestHandle> {
-    auto clone = std::make_shared<Wasm>(wasm, dispatcher);
+    auto clone = std::make_shared<Guest>(wasm, dispatcher);
     return std::make_shared<GuestHandle>(std::move(clone));
   };
 }
@@ -315,16 +303,15 @@ bool loadGuest(const InitializedGuestSharedPtr& initialized_guest,
                Server::ServerLifecycleNotifier& lifecycle_notifier, loadGuestCallback&& cb) {
   std::string source, code;
   auto config = initialized_guest->wasmConfig();
-  auto vm_config = config.config().vm_config();
 
-  if (vm_config.code().has_local()) {
-    code = Config::DataSource::read(vm_config.code().local(), true, api);
-    source = Config::DataSource::getPath(vm_config.code().local())
+  if (config.config().code().has_local()) {
+    code = Config::DataSource::read(config.config().code().local(), true, api);
+    source = Config::DataSource::getPath(config.config().code().local())
                  .value_or(code.empty() ? EMPTY_STRING : INLINE_STRING);
   }
 
-  auto vm_key =
-      makeVmKey(vm_config.vm_id(), MessageUtil::anyToBytes(vm_config.configuration()), code);
+  auto vm_key = makeVmKey(config.config().name(),
+                          MessageUtil::anyToBytes(config.config().configuration()), code);
   auto complete_cb = [cb, vm_key, initialized_guest, scope, &api, &cluster_manager, &dispatcher,
                       &lifecycle_notifier](std::string code) -> bool {
     if (code.empty()) {
@@ -335,11 +322,10 @@ bool loadGuest(const InitializedGuestSharedPtr& initialized_guest,
     auto config = initialized_guest->wasmConfig();
     auto wasm = loadGuest(
         vm_key, code, initialized_guest,
-        getGuestHandleFactory(config, scope, api, cluster_manager, dispatcher, lifecycle_notifier),
-        config.config().vm_config().allow_precompiled());
+        getGuestHandleFactory(config, scope, api, cluster_manager, dispatcher, lifecycle_notifier));
     if (!wasm || wasm->guest()->isFailed()) {
       ENVOY_LOG_TO_LOGGER(Envoy::Logger::Registry::getLog(Envoy::Logger::Id::wasm), trace,
-                          "Unable to create Wasm");
+                          "Unable to create Guest");
       cb(nullptr);
       return false;
     }
@@ -352,14 +338,14 @@ bool loadGuest(const InitializedGuestSharedPtr& initialized_guest,
 std::shared_ptr<GuestHandle>
 loadGuest(const std::string& vm_key, const std::string& code,
           const std::shared_ptr<InitializedGuest>&, // remove this, also remove  vm_key thing
-          const GuestHandleFactory& factory, bool allow_precompiled) {
+          const GuestHandleFactory& factory) {
   std::shared_ptr<GuestHandle> guest_handle;
   guest_handle = factory(vm_key);
   if (!guest_handle) {
     return nullptr;
   }
-  if (!guest_handle->guest()->load(code, allow_precompiled)) {
-    guest_handle->guest()->fail(FailState::UnableToInitializeCode, "Failed to load Wasm code");
+  if (!guest_handle->guest()->load(code)) {
+    guest_handle->guest()->fail(FailState::UnableToInitializeCode, "Failed to load Guest code");
     return nullptr;
   }
   return guest_handle;
@@ -375,7 +361,7 @@ getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& guest_handle_
                           "InitializedGuest configured to fail closed failed to load");
     }
     // To handle the case when failed to create VMs and fail-open/close properly,
-    // we still create InitializedGuestHandle with null Wasm.
+    // we still create InitializedGuestHandle with null Guest.
     return std::make_shared<InitializedGuestHandle>(nullptr, initialized_guest);
   }
 
@@ -392,7 +378,7 @@ getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& guest_handle_
     local_initialized_guests.erase(key);
   }
   // Get thread-local WasmVM.
-  auto guest_handle = getOrCreateThreadLocalUninitializedGuest(
+  auto guest_handle = getOrCreateThreadLocalGuestCodeCache(
       guest_handle_main, getGuestHandleCloneFactory(dispatcher), key);
   if (!guest_handle) {
     return nullptr;
@@ -412,11 +398,11 @@ getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& guest_handle_
   auto initialized_guest_factory = getInitializedGuestHandleFactory();
   auto initialized_guest_handle = initialized_guest_factory(guest_handle, initialized_guest);
   local_initialized_guests[key] = initialized_guest_handle;
-  guest_handle->guest()->wasm_vm()->addFailCallback([key](FailState fail_state) {
+  guest_handle->guest()->runtime()->addFailCallback([key](FailState fail_state) {
     if (fail_state == FailState::RuntimeError) {
       // If VM failed, erase the entry so that:
       // 1) we can recreate the new thread local initialized_guest from the same
-      // uninitialized_guest. 2) we wouldn't reuse the failed VM for new initialized_guest configs
+      // guest_code_cache. 2) we wouldn't reuse the failed VM for new initialized_guest configs
       // accidentally.
       local_initialized_guests.erase(key);
     };
@@ -425,9 +411,9 @@ getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& guest_handle_
 }
 
 static std::shared_ptr<GuestHandle>
-getOrCreateThreadLocalUninitializedGuest(const std::shared_ptr<GuestHandle>& handle,
-                                         const GuestHandleCloneFactory& clone_factory,
-                                         std::string_view vm_key) {
+getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<GuestHandle>& handle,
+                                     const GuestHandleCloneFactory& clone_factory,
+                                     std::string_view vm_key) {
   // Create and initialize new thread-local WasmVM.
   auto guest_handle = clone_factory(handle);
   if (!guest_handle) {
@@ -435,10 +421,10 @@ getOrCreateThreadLocalUninitializedGuest(const std::shared_ptr<GuestHandle>& han
     return nullptr;
   }
 
-  guest_handle->guest()->wasm_vm()->addFailCallback([vm_key](FailState fail_state) {
+  guest_handle->guest()->runtime()->addFailCallback([vm_key](FailState fail_state) {
     if (fail_state == FailState::RuntimeError) {
       // If VM failed, erase the entry so that:
-      // 1) we can recreate the new thread local VM from the same uninitialized_guest.
+      // 1) we can recreate the new thread local VM from the same guest_code_cache.
       // 2) we wouldn't reuse the failed VM for new initialized_guests accidentally.
       local_initialized_guests.erase(std::string(vm_key));
     };
