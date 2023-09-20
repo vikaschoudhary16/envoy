@@ -15,8 +15,8 @@ envoy_cc_library(
         "bytecode_util.cc",
         "context.cc",
         "exports.cc",
-        "plugin.cc",
-        "vm.cc",
+        "guest.cc",
+        "guest_config.cc",
         "vm_runtime.cc",
     ],
     hdrs = [
@@ -47,8 +47,8 @@ envoy_cc_library(
     hdrs = [
         "bytecode_util.h",
         "context.h",
-        "plugin.h",
-        "vm.h",
+        "guest.h",
+        "guest_config.h",
         "vm_runtime.h",
     ],
     deps = [

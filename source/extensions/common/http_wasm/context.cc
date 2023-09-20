@@ -1,7 +1,7 @@
 #include "source/extensions/common/http_wasm/context.h"
 #include "http_wasm_common.h"
 #include "http_wasm_enums.h"
-#include "source/extensions/common/http_wasm/vm.h"
+#include "source/extensions/common/http_wasm/guest.h"
 
 #include <algorithm>
 #include <cctype>

@@ -7,9 +7,9 @@
 #include "envoy/upstream/cluster_manager.h"
 
 #include "envoy/extensions/filters/http/http_wasm/v3/wasm.pb.validate.h"
-#include "source/extensions/common/http_wasm/plugin.h"
+#include "source/extensions/common/http_wasm/guest_config.h"
 #include "source/extensions/common/http_wasm/context.h"
-#include "source/extensions/common/http_wasm/vm.h"
+#include "source/extensions/common/http_wasm/guest.h"
 
 namespace Envoy {
 namespace Extensions {

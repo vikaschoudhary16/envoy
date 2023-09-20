@@ -1,6 +1,6 @@
 #include "source/extensions/filters/http/http_wasm/filter.h"
-#include "source/extensions/common/http_wasm/plugin.h"
-#include "source/extensions/common/http_wasm/vm.h"
+#include "source/extensions/common/http_wasm/guest_config.h"
+#include "source/extensions/common/http_wasm/guest.h"
 #include "source/extensions/common/http_wasm/vm_runtime.h"
 
 namespace Envoy {

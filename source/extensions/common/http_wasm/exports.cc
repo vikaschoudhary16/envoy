@@ -1,4 +1,4 @@
-#include "source/extensions/common/http_wasm/vm.h"
+#include "source/extensions/common/http_wasm/guest.h"
 #include "word.h"
 
 #include <cstdint>

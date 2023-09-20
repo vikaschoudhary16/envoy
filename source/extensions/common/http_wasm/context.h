@@ -8,21 +8,17 @@
 
 #include "envoy/access_log/access_log.h"
 #include "envoy/buffer/buffer.h"
-//#include "envoy/extensions/wasm/v3/wasm.pb.validate.h"
 #include "envoy/http/filter.h"
 #include "envoy/stats/sink.h"
 #include "envoy/upstream/cluster_manager.h"
 
 #include "source/common/common/assert.h"
 #include "source/common/common/logger.h"
-//#include "source/extensions/filters/common/expr/evaluator.h"
 
-//#include "eval/public/activation.h"
-
-#include "source/extensions/common/http_wasm/vm.h"
+#include "source/extensions/common/http_wasm/guest.h"
 #include "source/extensions/common/http_wasm/vm_runtime.h"
 #include "source/extensions/common/http_wasm/http_wasm_common.h"
-#include "source/extensions/common/http_wasm/plugin.h"
+#include "source/extensions/common/http_wasm/guest_config.h"
 
 namespace Envoy {
 namespace Extensions {
