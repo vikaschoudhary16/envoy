@@ -60,7 +60,7 @@ void Guest::initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notif
                                       });
 }
 
-Guest::Guest(WasmConfig& config, absl::string_view vm_key, const Stats::ScopeSharedPtr& scope,
+Guest::Guest(GuestConfig& config, absl::string_view vm_key, const Stats::ScopeSharedPtr& scope,
              Api::Api& api, Upstream::ClusterManager& cluster_manager,
              Event::Dispatcher& dispatcher)
     : scope_(scope), api_(api), stat_name_pool_(scope_->symbolTable()),
@@ -270,12 +270,12 @@ Context* Guest::getOrCreateInitializedGuestContext(
 };
 
 static GuestHandleFactory
-getGuestHandleFactory(WasmConfig& wasm_config, const Stats::ScopeSharedPtr& scope, Api::Api& api,
+getGuestHandleFactory(GuestConfig& guest_config, const Stats::ScopeSharedPtr& scope, Api::Api& api,
                       Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
                       Server::ServerLifecycleNotifier& lifecycle_notifier) {
-  return [&wasm_config, &scope, &api, &cluster_manager, &dispatcher,
+  return [&guest_config, &scope, &api, &cluster_manager, &dispatcher,
           &lifecycle_notifier](std::string_view vm_key) -> GuestHandleSharedPtr {
-    auto wasm = std::make_shared<Guest>(wasm_config, toAbslStringView(vm_key), scope, api,
+    auto wasm = std::make_shared<Guest>(guest_config, toAbslStringView(vm_key), scope, api,
                                         cluster_manager, dispatcher);
     wasm->initializeLifecycle(lifecycle_notifier);
     return std::make_shared<GuestHandle>(std::move(wasm));

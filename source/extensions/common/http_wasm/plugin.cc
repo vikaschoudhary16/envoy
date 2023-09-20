@@ -8,7 +8,7 @@ namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
 
-WasmConfig::WasmConfig(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config)
+GuestConfig::GuestConfig(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config)
     : config_(config) {
   if (config.has_environment_variables()) {
     const auto& envs = config_.environment_variables();

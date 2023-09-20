@@ -19,11 +19,11 @@ using GuestHandleCloneFactory =
     std::function<std::shared_ptr<GuestHandle>(std::shared_ptr<GuestHandle> wasm)>;
 using CallOnThreadFunction = std::function<void(std::function<void()>)>;
 
-class WasmConfig;
+class GuestConfig;
 class Guest : public Logger::Loggable<Logger::Id::wasm>,
               public std::enable_shared_from_this<Guest> {
 public:
-  Guest(WasmConfig& config, absl::string_view vm_key, const Stats::ScopeSharedPtr& scope,
+  Guest(GuestConfig& config, absl::string_view vm_key, const Stats::ScopeSharedPtr& scope,
         Api::Api& api, Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher);
   Guest(std::shared_ptr<GuestHandle> other, Event::Dispatcher& dispatcher);
   ~Guest();

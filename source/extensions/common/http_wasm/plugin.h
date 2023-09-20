@@ -25,9 +25,9 @@ using AllowedCapabilitiesMap = std::unordered_map<std::string, SanitizationConfi
 // clang-format on
 
 class Context;
-class WasmConfig {
+class GuestConfig {
 public:
-  WasmConfig(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config);
+  GuestConfig(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config);
   envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config() { return config_; }
   AllowedCapabilitiesMap& allowedCapabilities() { return allowed_capabilities_; }
   EnvironmentVariableMap& environmentVariables() { return envs_; }
@@ -38,7 +38,7 @@ private:
   EnvironmentVariableMap envs_;
 };
 
-using WasmConfigPtr = std::unique_ptr<WasmConfig>;
+using GuestConfigPtr = std::unique_ptr<GuestConfig>;
 
 // InitializedGuest contains the information for a filter/service.
 class InitializedGuest {
@@ -50,7 +50,7 @@ public:
       : name_(std::string(config.name())),
         configuration_(MessageUtil::anyToBytes(config.configuration())),
         fail_open_(config.fail_open()), direction_(direction), local_info_(local_info),
-        listener_metadata_(listener_metadata), wasm_config_(std::make_unique<WasmConfig>(config)),
+        listener_metadata_(listener_metadata), wasm_config_(std::make_unique<GuestConfig>(config)),
         key_(name_ + "||" + configuration_ + "||" +
              std::string(createInitializedGuestKey(config, direction, listener_metadata))),
         log_prefix_(makeLogPrefix()) {}
@@ -58,7 +58,7 @@ public:
   envoy::config::core::v3::TrafficDirection& direction() { return direction_; }
   const LocalInfo::LocalInfo& localInfo() { return local_info_; }
   const envoy::config::core::v3::Metadata* listenerMetadata() { return listener_metadata_; }
-  WasmConfig& wasmConfig() { return *wasm_config_; }
+  GuestConfig& wasmConfig() { return *wasm_config_; }
   const std::string name_;
   const std::string configuration_;
   const bool fail_open_;
@@ -79,7 +79,7 @@ private:
   envoy::config::core::v3::TrafficDirection direction_;
   const LocalInfo::LocalInfo& local_info_;
   const envoy::config::core::v3::Metadata* listener_metadata_;
-  WasmConfigPtr wasm_config_;
+  GuestConfigPtr wasm_config_;
 
 private:
   std::string makeLogPrefix() const;
