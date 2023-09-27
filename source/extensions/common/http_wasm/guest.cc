@@ -66,7 +66,7 @@ Guest::Guest(GuestConfig& config, const Stats::ScopeSharedPtr& scope, Api::Api& 
 
   if (!runtime_) {
     failed_ = FailState::UnableToCreateVm;
-    ENVOY_LOG(error, "Failed to create VM");
+    ENVOY_LOG(error, "Failed to create guest");
     return;
   }
   runtime_->addFailCallback([this](FailState fail_state) { failed_ = fail_state; });
@@ -239,21 +239,21 @@ bool Guest::initializeAndStart(Context* initialized_guest_context) {
   return !isFailed();
 }
 
-void Guest::start(Context* root_context) {
+void Guest::start(Context* context) {
   if (_initialize_) {
     // WASI reactor.
-    _initialize_(root_context);
+    _initialize_(context);
     if (main_) {
       // Call main() if it exists in WASI reactor, to allow module to
       // do early initialization (e.g. configure SDK).
       //
       // Re-using main() keeps this consistent when switching between
       // WASI command (that calls main()) and reactor (that doesn't).
-      main_(root_context, Word(0), Word(0));
+      main_(context, Word(0), Word(0));
     }
   } else if (_start_) {
     // WASI command.
-    _start_(root_context);
+    _start_(context);
   }
 }
 

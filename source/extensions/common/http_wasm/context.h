@@ -78,7 +78,7 @@ public:
   Context() = default;                                                       // Testing.
   Context(Guest* guest);                                                     // Vm Context.
   Context(Guest* guest, const InitializedGuestSharedPtr& initialized_guest); // Root Context.
-  Context(Guest* guest, uint32_t root_context_id,
+  Context(Guest* guest,
           InitializedGuestHandleSharedPtr initialized_guest_handle); // Stream context.
   ~Context() override;
 

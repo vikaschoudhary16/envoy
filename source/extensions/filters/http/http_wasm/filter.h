@@ -22,7 +22,7 @@ public:
                Server::Configuration::FactoryContext& context);
 
   std::shared_ptr<Context> createFilter() {
-    Guest* wasm = nullptr;
+    Guest* guest = nullptr;
     if (!tls_slot_->currentThreadRegistered()) {
       return nullptr;
     }
@@ -31,17 +31,17 @@ public:
       return nullptr;
     }
     if (handle->wasmHandle()) {
-      wasm = handle->wasmHandle()->guest().get();
+      guest = handle->wasmHandle()->guest().get();
     }
-    if (!wasm || wasm->isFailed()) {
+    if (!guest || guest->isFailed()) {
       if (handle->initializedGuest()->fail_open_) {
         return nullptr; // Fail open skips adding this filter to callbacks.
       } else {
-        return std::make_shared<Context>(nullptr, 0,
+        return std::make_shared<Context>(nullptr,
                                          handle); // Fail closed is handled by an empty Context.
       }
     }
-    return std::make_shared<Context>(wasm, handle->rootContextId(), handle);
+    return std::make_shared<Context>(guest, handle);
   }
 
 private:
