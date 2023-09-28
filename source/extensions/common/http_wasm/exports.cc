@@ -203,7 +203,9 @@ int64_t read_body(Word kind, Word val, Word size) {
   auto* context = contextOrEffectiveContext();
   auto* buffer = context->getBuffer(static_cast<WasmBufferType>(kind.u64_));
   if (buffer == nullptr) {
-    return 0;
+    uint64_t eof = 1;
+    eof = (eof << 32);
+    return eof;
   }
   auto targetMemory = context->runtime()->getMemory(val.u64_, size);
   if (!targetMemory) {
