@@ -42,49 +42,35 @@ using GuestConfigPtr = std::unique_ptr<GuestConfig>;
 // InitializedGuest contains the information for a filter/service.
 class InitializedGuest {
 public:
-  InitializedGuest(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config,
-                   envoy::config::core::v3::TrafficDirection direction,
-                   const LocalInfo::LocalInfo& local_info,
-                   const envoy::config::core::v3::Metadata* listener_metadata)
+  InitializedGuest(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config)
       : name_(std::string(config.name())),
         configuration_(MessageUtil::anyToBytes(config.configuration())),
-        fail_open_(config.fail_open()), direction_(direction), local_info_(local_info),
-        listener_metadata_(listener_metadata), wasm_config_(std::make_unique<GuestConfig>(config)),
-        key_(name_ + "||" + configuration_ + "||" +
-             std::string(createInitializedGuestKey(config, direction, listener_metadata))),
+        fail_open_(config.fail_open()), wasm_config_(std::make_unique<GuestConfig>(config)),
+        key_(name_ + "||" + configuration_ + "||" + std::string(createInitializedGuestKey(config))),
         log_prefix_(makeLogPrefix()) {}
 
-  envoy::config::core::v3::TrafficDirection& direction() { return direction_; }
-  const LocalInfo::LocalInfo& localInfo() { return local_info_; }
-  const envoy::config::core::v3::Metadata* listenerMetadata() { return listener_metadata_; }
   GuestConfig& wasmConfig() { return *wasm_config_; }
-  const std::string name_;
-  const std::string configuration_;
-  const bool fail_open_;
+  std::string name_;
+  std::string configuration_;
+  bool fail_open_;
 
   const std::string& key() const { return key_; }
-  const std::string& log_prefix() const { return log_prefix_; }
+  std::string& log_prefix() { return log_prefix_; }
 
 private:
   static std::string createInitializedGuestKey(
-      const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config,
-      envoy::config::core::v3::TrafficDirection direction,
-      const envoy::config::core::v3::Metadata* listener_metadata) {
-    return config.name() + "||" + envoy::config::core::v3::TrafficDirection_Name(direction) +
-           (listener_metadata ? "||" + std::to_string(MessageUtil::hash(*listener_metadata)) : "");
+      const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config) {
+    return config.name();
   }
 
 private:
-  envoy::config::core::v3::TrafficDirection direction_;
-  const LocalInfo::LocalInfo& local_info_;
-  const envoy::config::core::v3::Metadata* listener_metadata_;
   GuestConfigPtr wasm_config_;
 
 private:
   std::string makeLogPrefix() const;
 
   const std::string key_;
-  const std::string log_prefix_;
+  std::string log_prefix_;
 };
 
 using InitializedGuestSharedPtr = std::shared_ptr<InitializedGuest>;

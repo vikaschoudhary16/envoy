@@ -165,11 +165,8 @@ void Guest::getFunctions() {
 #undef _GET_PROXY
 }
 
-Context* Guest::createContext(const std::shared_ptr<InitializedGuest>& initialized_guest) {
-  return new Context(this, initialized_guest);
-}
+Context* Guest::createContext(std::shared_ptr<InitializedGuest>& initialized_guest) {
 
-Context* Guest::createRootContext(const std::shared_ptr<InitializedGuest>& initialized_guest) {
   return new Context(this, initialized_guest);
 }
 
@@ -259,7 +256,8 @@ void Guest::start(Context* context) {
 
 Context* Guest::getOrCreateInitializedGuestContext(
     const std::shared_ptr<InitializedGuest>& initialized_guest) {
-  auto context = std::unique_ptr<Context>(createRootContext(initialized_guest));
+  std::shared_ptr<InitializedGuest> nonConstInitializedGuest = initialized_guest;
+  auto context = std::unique_ptr<Context>(createContext(nonConstInitializedGuest));
   auto* context_ptr = context.get();
   initialized_guest_context_ = std::move(context);
   return context_ptr;

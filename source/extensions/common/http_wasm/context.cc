@@ -109,20 +109,20 @@ WasmResult Buffer::copyFrom(size_t start, std::string_view data, size_t length) 
   return WasmResult::Ok;
 }
 
-Context::Context(Guest* wasm) : guest_(wasm), parent_context_(this) {
-  guest_->contexts_[id_] = this;
-}
-Context::Context(Guest* wasm, const InitializedGuestSharedPtr& initialized_guest)
-    : guest_(wasm), id_(wasm->allocContextId()), root_id_(initialized_guest->name_),
-      root_log_prefix_(initialized_guest->name_), initialized_guest_(initialized_guest) {
-  current_context_ = this;
-  root_local_info_ = &initialized_guest->localInfo();
-  guest_->contexts_[id_] = this;
-}
-Context::Context(Guest* wasm, InitializedGuestHandleSharedPtr initialized_guest_handle)
+// Context::Context(Guest* wasm) : guest_(wasm), parent_context_(this) {
+//   guest_->contexts_[id_] = this;
+// }
+// Context::Context(Guest* wasm, const InitializedGuestSharedPtr& initialized_guest)
+//     : guest_(wasm), id_(wasm->allocContextId()), root_id_(initialized_guest->name_),
+//       root_log_prefix_(initialized_guest->name_), initialized_guest_(initialized_guest) {
+//   current_context_ = this;
+//   root_local_info_ = &initialized_guest->localInfo();
+//   guest_->contexts_[id_] = this;
+// }
+Context::Context(Guest* wasm, InitializedGuestSharedPtr& initialized_guest)
+    // Context::Context(Guest* wasm, InitializedGuestHandleSharedPtr initialized_guest_handle)
     : guest_(wasm), id_(wasm != nullptr ? wasm->allocContextId() : 0),
-      initialized_guest_(initialized_guest_handle->initializedGuest()),
-      initialized_guest_handle_(initialized_guest_handle) {
+      initialized_guest_(initialized_guest) {
   if (guest_ != nullptr) {
     guest_->contexts_[id_] = this;
   }

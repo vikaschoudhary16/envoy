@@ -75,11 +75,12 @@ class Context : public Logger::Loggable<Logger::Id::wasm>,
                 public Http::StreamFilter,
                 public std::enable_shared_from_this<Context> {
 public:
-  Context() = default;                                                       // Testing.
-  Context(Guest* guest);                                                     // Vm Context.
-  Context(Guest* guest, const InitializedGuestSharedPtr& initialized_guest); // Root Context.
-  Context(Guest* guest,
-          InitializedGuestHandleSharedPtr initialized_guest_handle); // Stream context.
+  Context() = default; // Testing.
+                       // Context(Guest* guest); // Vm Context.
+  Context(Guest* guest, InitializedGuestSharedPtr& initialized_guest); // Root Context.
+  // Context(Guest* guest, const InitializedGuestSharedPtr& initialized_guest); // Root Context.
+  // Context(Guest* guest,
+  //         InitializedGuestHandleSharedPtr initialized_guest_handle); // Stream context.
   ~Context() override;
 
   Guest* guest() const { return guest_; }

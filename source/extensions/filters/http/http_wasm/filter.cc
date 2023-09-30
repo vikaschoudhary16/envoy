@@ -13,8 +13,7 @@ FilterConfig::FilterConfig(
     Server::Configuration::FactoryContext& context)
     : tls_slot_(ThreadLocal::TypedSlot<InitializedGuestHandleSharedPtrThreadLocal>::makeUnique(
           context.threadLocal())) {
-  const auto initializedGuest = std::make_shared<InitializedGuest>(
-      config, context.direction(), context.localInfo(), &context.listenerMetadata());
+  auto initializedGuest = std::make_shared<InitializedGuest>(config);
 
   auto callback = [initializedGuest, this](const GuestHandleSharedPtr& uninitialized_guest) {
     // NB: the Slot set() call doesn't complete inline, so all arguments must outlive this call.

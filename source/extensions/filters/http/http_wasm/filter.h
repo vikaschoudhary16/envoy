@@ -37,11 +37,12 @@ public:
       if (handle->initializedGuest()->fail_open_) {
         return nullptr; // Fail open skips adding this filter to callbacks.
       } else {
-        return std::make_shared<Context>(nullptr,
-                                         handle); // Fail closed is handled by an empty Context.
+        return std::make_shared<Context>(
+            nullptr,
+            handle->initializedGuest()); // Fail closed is handled by an empty Context.
       }
     }
-    return std::make_shared<Context>(guest, handle);
+    return std::make_shared<Context>(guest, handle->initializedGuest());
   }
 
 private:

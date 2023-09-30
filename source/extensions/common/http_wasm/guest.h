@@ -5,6 +5,7 @@
 #include "source/extensions/common/http_wasm/vm_runtime.h"
 #include "source/extensions/common/http_wasm/bytecode_util.h"
 #include "envoy/server/lifecycle_notifier.h"
+#include <memory>
 
 namespace Envoy {
 namespace Extensions {
@@ -39,8 +40,7 @@ public:
   bool load(const std::string& code);
   bool initializeAndStart(Context* initialized_guest_context);
   void start(Context* initialized_guest_context);
-  bool configure(Context* initialized_guest_context,
-                 std::shared_ptr<InitializedGuest> initialized_guest);
+
   // Returns the initialized_guest Context.
   Context*
   getOrCreateInitializedGuestContext(const std::shared_ptr<InitializedGuest>& initialized_guest);
@@ -79,8 +79,7 @@ public:
            allowed_capabilities_.find(capability_name) != allowed_capabilities_.end();
   }
 
-  Context* createRootContext(const std::shared_ptr<InitializedGuest>& initialized_guest);
-  virtual Context* createContext(const std::shared_ptr<InitializedGuest>& initialized_guest);
+  virtual Context* createContext(std::shared_ptr<InitializedGuest>& initialized_guest);
   template <typename T> bool setDatatype(uint64_t ptr, const T& t);
   void fail(FailState fail_state, std::string_view message) {
     error(message);
