@@ -44,8 +44,10 @@ Word log_enabled(Word log_level) {
   return context->runtime()->cmpLogLevel(static_cast<LogLevel>(log_level.u64_));
 }
 
+uint32_t httpWasmLogLevelDebug = 0xFFFFFFFF; // http-wasm log level for debug is -1;
+
 void log(Word level, Word address, Word size) {
-  if (level >= static_cast<uint64_t>(LogLevel::Max)) { // Max is none logs
+  if (level != static_cast<uint32_t>(httpWasmLogLevelDebug) && level >= static_cast<uint64_t>(LogLevel::Max)) { // Max is none logs
     return;
   }
   auto* context = contextOrEffectiveContext();
