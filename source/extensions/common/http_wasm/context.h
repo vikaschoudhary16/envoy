@@ -145,10 +145,6 @@ public:
   FilterTrailersStatus onResponseTrailers(uint32_t trailers);
   FilterMetadataStatus onResponseMetadata(uint32_t elements);
 
-  WasmResult unimplemented() {
-    error("unimplemented http-wasm API");
-    return WasmResult::Unimplemented;
-  }
   bool isFailed();
 
   // General
@@ -179,11 +175,11 @@ public:
   Buffer* getBuffer(WasmBufferType type);
 
   uint64_t getCurrentTimeNanoseconds() {
-    unimplemented();
+    error("unimplemented wasi API");
     return 0;
   }
   uint64_t getMonotonicTimeNanoseconds() {
-    unimplemented();
+    error("unimplemented wasi API");
     return 0;
   }
 

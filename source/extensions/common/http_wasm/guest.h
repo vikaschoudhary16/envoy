@@ -73,12 +73,6 @@ public:
     return nullptr;
   }
 
-  // Capability restriction (restricting/exposing the ABI).
-  bool capabilityAllowed(std::string capability_name) {
-    return allowed_capabilities_.empty() ||
-           allowed_capabilities_.find(capability_name) != allowed_capabilities_.end();
-  }
-
   virtual Context* createContext(std::shared_ptr<InitializedGuest>& initialized_guest);
   template <typename T> bool setDatatype(uint64_t ptr, const T& t);
   void fail(FailState fail_state, std::string_view message) {
@@ -125,10 +119,6 @@ protected:
   WasmCallVoid<2> handle_response_; // http-wasm
 
 #define FOR_ALL_MODULE_FUNCTIONS(_f) _f(handle_request) _f(handle_response)
-
-  // Capabilities which are allowed to be linked to the module. If this is empty, restriction
-  // is not enforced.
-  AllowedCapabilitiesMap allowed_capabilities_;
 
   std::shared_ptr<GuestHandle> parent_guest_handle_;
 

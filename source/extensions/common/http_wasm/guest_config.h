@@ -20,20 +20,16 @@ struct SanitizationConfig {
   std::vector<std::string> argument_list;
   bool is_allowlist;
 };
-using AllowedCapabilitiesMap = std::unordered_map<std::string, SanitizationConfig>;
 // clang-format on
 
-class Context;
 class GuestConfig {
 public:
   GuestConfig(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config);
   envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config() { return config_; }
-  AllowedCapabilitiesMap& allowedCapabilities() { return allowed_capabilities_; }
   EnvironmentVariableMap& environmentVariables() { return envs_; }
 
 private:
   envoy::extensions::filters::http::http_wasm::v3::GuestConfig config_;
-  AllowedCapabilitiesMap allowed_capabilities_{};
   EnvironmentVariableMap envs_;
 };
 

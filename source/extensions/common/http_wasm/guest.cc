@@ -118,12 +118,10 @@ void Guest::registerCallbacks() {
 
   // Register the capability with the VM if it has been allowed, otherwise register a stub.
 #define _REGISTER(module_name, export_prefix, _fn)                                                 \
-  if (capabilityAllowed(#_fn)) {                                                                   \
-    runtime_->registerCallback(                                                                    \
-        module_name, #_fn, &exports::export_prefix##_fn,                                           \
-        &ConvertFunctionWordToUint32<decltype(exports::export_prefix##_fn),                        \
-                                     exports::export_prefix##_fn>::convertFunctionWordToUint32);   \
-  }
+  runtime_->registerCallback(                                                                      \
+      module_name, #_fn, &exports::export_prefix##_fn,                                             \
+      &ConvertFunctionWordToUint32<decltype(exports::export_prefix##_fn),                          \
+                                   exports::export_prefix##_fn>::convertFunctionWordToUint32);
 
 #define _REGISTER_WASI_UNSTABLE(_fn) _REGISTER("wasi_unstable", wasi_unstable_, _fn)
 #define _REGISTER_WASI_SNAPSHOT(_fn) _REGISTER("wasi_snapshot_preview1", wasi_unstable_, _fn)
@@ -152,13 +150,8 @@ void Guest::getFunctions() {
 #undef _GET_ALIAS
 #undef _GET
 
-  // Try to point the capability to one of the module exports, if the capability has been allowed.
-#define _GET_PROXY(_fn)                                                                            \
-  if (capabilityAllowed(#_fn)) {                                                                   \
-    runtime_->getFunction(#_fn, &_fn##_);                                                          \
-  } else {                                                                                         \
-    _fn##_ = nullptr;                                                                              \
-  }
+  // Try to point the capability to one of the module exports
+#define _GET_PROXY(_fn) runtime_->getFunction(#_fn, &_fn##_);
 
   FOR_ALL_MODULE_FUNCTIONS(_GET_PROXY);
 

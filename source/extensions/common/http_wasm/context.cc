@@ -152,20 +152,8 @@ Http::HeaderMap* Context::getMap(WasmHeaderMapType type) {
   switch (type) {
   case WasmHeaderMapType::RequestHeaders:
     return request_headers_;
-  case WasmHeaderMapType::RequestTrailers:
-    if (request_trailers_ == nullptr && request_body_buffer_ && end_of_stream_ &&
-        decoder_callbacks_) {
-      request_trailers_ = &decoder_callbacks_->addDecodedTrailers();
-    }
-    return request_trailers_;
   case WasmHeaderMapType::ResponseHeaders:
     return response_headers_;
-  case WasmHeaderMapType::ResponseTrailers:
-    if (response_trailers_ == nullptr && response_body_buffer_ && end_of_stream_ &&
-        encoder_callbacks_) {
-      response_trailers_ = &encoder_callbacks_->addEncodedTrailers();
-    }
-    return response_trailers_;
   default:
     return nullptr;
   }
@@ -175,12 +163,8 @@ const Http::HeaderMap* Context::getConstMap(WasmHeaderMapType type) {
   switch (type) {
   case WasmHeaderMapType::RequestHeaders:
     return request_headers_;
-  case WasmHeaderMapType::RequestTrailers:
-    return request_trailers_;
   case WasmHeaderMapType::ResponseHeaders:
     return response_headers_;
-  case WasmHeaderMapType::ResponseTrailers:
-    return response_trailers_;
   }
   IS_ENVOY_BUG("unexpected");
   return nullptr;
@@ -212,13 +196,11 @@ WasmResult Context::getHeaderMapValue(WasmHeaderMapType type, std::string_view k
   if (entries.empty()) {
     return WasmResult::NotFound;
   }
-  // ENVOY_LOG(warn, "header key: {}", key);
 
   // Create a vector to hold the individual string_view elements
   std::vector<std::string_view> temp_values;
   for (size_t i = 0; i < entries.size(); i++) {
     temp_values.emplace_back(entries[i]->value().getStringView());
-    // ENVOY_LOG(warn, "header key-val: {}: {}", key, entries[i]->value().getStringView());
   }
   // Set the output vector
   name_values = std::move(temp_values);
