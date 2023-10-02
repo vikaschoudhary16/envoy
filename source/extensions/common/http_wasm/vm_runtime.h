@@ -89,7 +89,7 @@ class Runtime;
 using RuntimePtr = std::unique_ptr<Runtime>;
 
 // Create a new v8 client instance.
-RuntimePtr createV8Client();
+RuntimePtr createV8Runtime();
 
 // These are templates and its helper for constructing signatures of functions callbacks from Wasm
 // VMs.

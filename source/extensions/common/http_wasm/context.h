@@ -233,8 +233,8 @@ private:
   // helper functions
   FilterHeadersStatus convertVmCallResultToFilterHeadersStatus(uint64_t result);
   FilterDataStatus convertVmCallResultToFilterDataStatus(uint64_t result);
-  FilterTrailersStatus convertVmCallResultToFilterTrailersStatus(uint64_t result);
-  FilterMetadataStatus convertVmCallResultToFilterMetadataStatus(uint64_t result);
+  // FilterTrailersStatus convertVmCallResultToFilterTrailersStatus(uint64_t result);
+  // FilterMetadataStatus convertVmCallResultToFilterMetadataStatus(uint64_t result);
   uint32_t request_context_{0};
 };
 using ContextSharedPtr = std::shared_ptr<Context>;

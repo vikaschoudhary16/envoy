@@ -31,7 +31,7 @@ public:
 
   Upstream::ClusterManager& clusterManager() const { return cluster_manager_; }
   Event::Dispatcher& dispatcher() { return dispatcher_; }
-  Context* getRootContext() { return initialized_guest_context_.get(); }
+  // Context* getRootContext() { return initialized_guest_context_.get(); }
   std::shared_ptr<Guest> sharedThis() {
     return std::static_pointer_cast<Guest>(shared_from_this());
   }
@@ -100,18 +100,18 @@ protected:
   Upstream::ClusterManager& cluster_manager_;
   Event::Dispatcher& dispatcher_;
   Event::PostCb server_shutdown_post_cb_;
-  absl::flat_hash_map<uint32_t, Event::TimerPtr> timer_; // per root_id.
+  absl::flat_hash_map<uint32_t, Event::TimerPtr> timer_; // per context id.
   TimeSource& time_source_;
 
   std::unique_ptr<Runtime> runtime_;
   std::optional<Cloneable> started_from_;
 
-  uint32_t next_context_id_ = 1;                       // 0 is reserved for the VM context.
+  uint32_t next_context_id_ = 0;
   std::unique_ptr<Context> initialized_guest_context_; // InitializedGuest Context
-  std::unordered_map<std::string, std::unique_ptr<Context>> pending_done_; // Root contexts.
-  std::unordered_set<std::unique_ptr<Context>> pending_delete_;            // Root contexts.
-  std::unordered_map<uint32_t, Context*> contexts_;                        // Contains all contexts.
-  std::unordered_map<uint32_t, std::chrono::milliseconds> timer_period_;   // per root_id.
+  std::unordered_map<std::string, std::unique_ptr<Context>> pending_done_;
+  std::unordered_set<std::unique_ptr<Context>> pending_delete_;
+  std::unordered_map<uint32_t, Context*> contexts_;                      // Contains all contexts.
+  std::unordered_map<uint32_t, std::chrono::milliseconds> timer_period_; // per context id.
   std::unordered_map<std::string, std::string>
       envs_; // environment variables passed through wasi.environ_get
 
@@ -172,7 +172,7 @@ public:
   std::shared_ptr<InitializedGuest>& initializedGuest() { return initialized_guest_; }
   std::shared_ptr<Guest>& guest() { return guest_handle_->guest(); }
   GuestHandleSharedPtr& wasmHandle() { return guest_handle_; }
-  uint32_t rootContextId();
+  // uint32_t rootContextId();
 
 private:
   std::shared_ptr<InitializedGuest> initialized_guest_;

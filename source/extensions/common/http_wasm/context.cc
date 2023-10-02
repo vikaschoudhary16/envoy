@@ -602,16 +602,16 @@ FilterDataStatus Context::convertVmCallResultToFilterDataStatus(uint64_t result)
   return static_cast<FilterDataStatus>(result);
 }
 
-FilterTrailersStatus Context::convertVmCallResultToFilterTrailersStatus(uint64_t result) {
-  return static_cast<FilterTrailersStatus>(result);
-}
+// FilterTrailersStatus Context::convertVmCallResultToFilterTrailersStatus(uint64_t result) {
+//   return static_cast<FilterTrailersStatus>(result);
+// }
 
-FilterMetadataStatus Context::convertVmCallResultToFilterMetadataStatus(uint64_t result) {
-  if (static_cast<FilterMetadataStatus>(result) == FilterMetadataStatus::Continue) {
-    return FilterMetadataStatus::Continue;
-  }
-  return FilterMetadataStatus::Continue; // This is currently the only return code.
-}
+// FilterMetadataStatus Context::convertVmCallResultToFilterMetadataStatus(uint64_t result) {
+//   if (static_cast<FilterMetadataStatus>(result) == FilterMetadataStatus::Continue) {
+//     return FilterMetadataStatus::Continue;
+//   }
+//   return FilterMetadataStatus::Continue; // This is currently the only return code.
+// }
 
 Context::~Context() {
   // Do not remove vm context which has the same lifetime as guest_.

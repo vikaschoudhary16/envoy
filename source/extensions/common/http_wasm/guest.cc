@@ -62,7 +62,7 @@ Guest::Guest(GuestConfig& config, const Stats::ScopeSharedPtr& scope, Api::Api& 
              Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher)
     : scope_(scope), api_(api), stat_name_pool_(scope_->symbolTable()),
       cluster_manager_(cluster_manager), dispatcher_(dispatcher),
-      time_source_(dispatcher.timeSource()), runtime_(createV8Client()) {
+      time_source_(dispatcher.timeSource()), runtime_(createV8Runtime()) {
 
   if (!runtime_) {
     failed_ = FailState::UnableToCreateVm;
@@ -419,9 +419,9 @@ getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<GuestHandle>& handle,
   return guest_handle;
 }
 
-uint32_t InitializedGuestHandle::rootContextId() {
-  return guest_handle_->guest()->getRootContext()->id();
-}
+// uint32_t InitializedGuestHandle::rootContextId() {
+//   return guest_handle_->guest()->getRootContext()->id();
+// }
 
 } // namespace HttpWasm
 } // namespace HttpFilters

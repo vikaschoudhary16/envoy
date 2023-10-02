@@ -33,7 +33,7 @@ LogLevel WasmScopeLogger::getLogLevel() {
 void WasmScopeLogger::error(std::string_view message) { ENVOY_LOG(error, message); }
 void WasmScopeLogger::debug(std::string_view message) { ENVOY_LOG(debug, message); }
 
-RuntimePtr createV8Client() {
+RuntimePtr createV8Runtime() {
   auto runtime_client = V8::createV8Vm();
   runtime_client->logger() = std::make_unique<WasmScopeLogger>();
   return runtime_client;
