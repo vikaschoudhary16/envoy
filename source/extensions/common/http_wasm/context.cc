@@ -349,10 +349,7 @@ Http::FilterHeadersStatus convertFilterHeadersStatus(FilterHeadersStatus status)
   case FilterHeadersStatus::Continue:
     return Http::FilterHeadersStatus::Continue;
   case FilterHeadersStatus::StopIteration:
-    return Http::FilterHeadersStatus::StopIteration;
-  case FilterHeadersStatus::StopAllIterationAndBuffer:
-    return Http::FilterHeadersStatus::StopAllIterationAndBuffer;
-  case FilterHeadersStatus::StopAllIterationAndWatermark:
+    // return Http::FilterHeadersStatus::StopIteration;
     return Http::FilterHeadersStatus::StopAllIterationAndWatermark;
   }
 };
@@ -380,12 +377,12 @@ Http::FilterDataStatus convertFilterDataStatus(FilterDataStatus status) {
   default:
   case FilterDataStatus::Continue:
     return Http::FilterDataStatus::Continue;
-  case FilterDataStatus::StopIterationAndBuffer:
-    return Http::FilterDataStatus::StopIterationAndBuffer;
-  case FilterDataStatus::StopIterationAndWatermark:
-    return Http::FilterDataStatus::StopIterationAndWatermark;
-  case FilterDataStatus::StopIterationNoBuffer:
+  case FilterDataStatus::StopIteration:
     return Http::FilterDataStatus::StopIterationNoBuffer;
+    // case FilterDataStatus::StopIterationAndWatermark:
+    //   return Http::FilterDataStatus::StopIterationAndWatermark;
+    // case FilterDataStatus::StopIterationNoBuffer:
+    //   return Http::FilterDataStatus::StopIterationNoBuffer;
   }
 };
 
@@ -589,12 +586,6 @@ void Context::maybeAddContentLength(uint64_t content_length) {
 }
 
 FilterHeadersStatus Context::convertVmCallResultToFilterHeadersStatus(uint64_t result) {
-  if (result == static_cast<uint64_t>(FilterHeadersStatus::StopIteration)) {
-    // Always convert StopIteration (pause processing headers, but continue processing body)
-    // to StopAllIterationAndWatermark (pause all processing), since the former breaks all
-    // assumptions about HTTP processing.
-    return FilterHeadersStatus::StopAllIterationAndWatermark;
-  }
   return static_cast<FilterHeadersStatus>(result);
 }
 
@@ -621,9 +612,9 @@ Context::~Context() {
 }
 
 FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stream) {
-  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
+  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopIteration);
   const auto result = guest_->handle_request_(this);
-  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
+  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopIteration);
   request_context_ = uint32_t(result >> 32);
   uint32_t next = uint32_t(result);
   ENVOY_LOG(debug, "onRequestHeaders: {} {} {}", request_context_, next, end_of_stream);
@@ -631,9 +622,9 @@ FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stre
 }
 
 FilterDataStatus Context::onRequestBody(uint32_t body_length, bool end_of_stream) {
-  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
+  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIteration);
   const auto result = guest_->handle_request_(this);
-  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
+  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIteration);
   request_context_ = uint32_t(result >> 32);
   uint32_t next = uint32_t(result);
   return convertVmCallResultToFilterDataStatus(next);
@@ -650,14 +641,14 @@ FilterMetadataStatus Context::onRequestMetadata(uint32_t elements) {
 }
 
 FilterHeadersStatus Context::onResponseHeaders(uint32_t headers, bool end_of_stream) {
-  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopAllIterationAndWatermark);
+  CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopIteration);
   ENVOY_LOG(debug, "onResponseHeaders: {} ", request_context_);
   guest_->handle_response_(this, request_context_, 0);
   return FilterHeadersStatus::Continue;
 }
 
 FilterDataStatus Context::onResponseBody(uint32_t body_length, bool end_of_stream) {
-  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIterationNoBuffer);
+  CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIteration);
   guest_->handle_response_(this, request_context_, 0);
   return FilterDataStatus::Continue;
 }
