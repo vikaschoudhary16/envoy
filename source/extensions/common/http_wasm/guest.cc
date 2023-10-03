@@ -1,4 +1,5 @@
 #include "envoy/server/lifecycle_notifier.h"
+#include "guest_config.h"
 #include "source/common/config/datasource.h"
 #include "source/extensions/common/http_wasm/guest.h"
 #include "source/extensions/common/http_wasm/v8/v8.h"
@@ -12,8 +13,8 @@ namespace HttpFilters {
 namespace HttpWasm {
 
 namespace {
-// Map from Wasm Key to the local Wasm instance.
-thread_local std::unordered_map<std::string, std::weak_ptr<InitializedGuestHandle>>
+// Map from guest config key to mapping of running guest and guest config.
+thread_local std::unordered_map<std::string, std::weak_ptr<InitializedGuestAndGuestConfig>>
     local_guest_configs;
 const std::string INLINE_STRING = "<inline>";
 
@@ -68,14 +69,12 @@ Guest::Guest(GuestConfig& config, const Stats::ScopeSharedPtr& scope, Api::Api& 
   ENVOY_LOG(debug, "Guest created now active");
 }
 
-Guest::Guest(GuestHandleSharedPtr guest_handle, Event::Dispatcher& dispatcher)
-    : std::enable_shared_from_this<Guest>(*guest_handle->guest()),
-      scope_(getGuest(guest_handle)->scope_), api_(getGuest(guest_handle)->api_),
-      stat_name_pool_(scope_->symbolTable()),
-      cluster_manager_(getGuest(guest_handle)->clusterManager()), dispatcher_(dispatcher),
-      time_source_(dispatcher.timeSource()) {
-  parent_guest_handle_ = guest_handle;
-  runtime_ = guest_handle->guest()->runtime()->clone();
+Guest::Guest(GuestSharedPtr guest, Event::Dispatcher& dispatcher)
+    : std::enable_shared_from_this<Guest>(*guest), scope_(guest->scope_), api_(guest->api_),
+      stat_name_pool_(scope_->symbolTable()), cluster_manager_(guest->clusterManager()),
+      dispatcher_(dispatcher), time_source_(dispatcher.timeSource()) {
+  parent_guest_ = guest;
+  runtime_ = guest->runtime()->clone();
   if (!runtime_) {
     failed_ = FailState::UnableToCreateVm;
     return;
@@ -199,9 +198,8 @@ bool Guest::initializeAndStart(Context* guest_config_context) {
   }
   // TODO(vikas): I think we can remove this whole Cloneable thing.
   if (started_from_ == Cloneable::NotCloneable) {
-    auto ok =
-        runtime_->load(parent_guest_handle_->guest()->moduleBytecode(),
-                       /*modulePrecompiled*/ "", parent_guest_handle_->guest()->functionNames());
+    auto ok = runtime_->load(parent_guest_->moduleBytecode(),
+                             /*modulePrecompiled*/ "", parent_guest_->functionNames());
     if (!ok) {
       fail(FailState::UnableToInitializeCode, "Failed to load Guest module from base Guest");
       return false;
@@ -250,31 +248,32 @@ Guest::getOrCreateInitializedGuestContext(const std::shared_ptr<GuestConfig>& gu
   return context_ptr;
 };
 
-static GuestHandleFactory
-getGuestHandleFactory(GuestConfig& guest_config, const Stats::ScopeSharedPtr& scope, Api::Api& api,
-                      Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
-                      Server::ServerLifecycleNotifier& lifecycle_notifier) {
+static GuestFactory getGuestFactory(GuestConfig& guest_config, const Stats::ScopeSharedPtr& scope,
+                                    Api::Api& api, Upstream::ClusterManager& cluster_manager,
+                                    Event::Dispatcher& dispatcher,
+                                    Server::ServerLifecycleNotifier& lifecycle_notifier) {
   return [&guest_config, &scope, &api, &cluster_manager, &dispatcher,
-          &lifecycle_notifier]() -> GuestHandleSharedPtr {
-    auto wasm = std::make_shared<Guest>(guest_config, scope, api, cluster_manager, dispatcher);
-    wasm->initializeLifecycle(lifecycle_notifier);
-    return std::make_shared<GuestHandle>(std::move(wasm));
+          &lifecycle_notifier]() -> GuestSharedPtr {
+    auto guest = std::make_shared<Guest>(guest_config, scope, api, cluster_manager, dispatcher);
+    guest->initializeLifecycle(lifecycle_notifier);
+    return std::move(guest);
   };
 }
 
-static GuestHandleCloneFactory getGuestHandleCloneFactory(Event::Dispatcher& dispatcher) {
-  return [&dispatcher](GuestHandleSharedPtr wasm) -> std::shared_ptr<GuestHandle> {
-    auto clone = std::make_shared<Guest>(wasm, dispatcher);
-    return std::make_shared<GuestHandle>(std::move(clone));
+static GuestCloneFactory getGuestCloneFactory(Event::Dispatcher& dispatcher) {
+  return [&dispatcher](GuestSharedPtr guest) -> std::shared_ptr<Guest> {
+    auto clone = std::make_shared<Guest>(guest, dispatcher);
+    return clone;
   };
 }
 
-static InitializedGuestHandleFactory getInitializedGuestHandleFactory() {
-  return [](GuestHandleSharedPtr wasm,
-            GuestConfigSharedPtr guest_config) -> std::shared_ptr<InitializedGuestHandle> {
-    return std::make_shared<InitializedGuestHandle>(wasm, guest_config);
-  };
-}
+// static InitializedGuestHandleFactory getInitializedGuestHandleFactory() {
+//   return [](GuestSharedPtr wasm,
+//             GuestConfigSharedPtr guest_config) -> std::shared_ptr<InitializedGuestAndGuestConfig>
+//             {
+//     return std::make_shared<InitializedGuestAndGuestConfig>(wasm, guest_config);
+//   };
+// }
 
 bool loadGuest(const GuestConfigSharedPtr& guest_config, const Stats::ScopeSharedPtr& scope,
                Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
@@ -287,59 +286,54 @@ bool loadGuest(const GuestConfigSharedPtr& guest_config, const Stats::ScopeShare
     code = Config::DataSource::read(guest_config->config().code().local(), true, api);
   }
 
-  // auto complete_cb = [cb, guest_config, scope, &api, &cluster_manager, &dispatcher,
-  //                     &lifecycle_notifier](std::string code) -> bool {
   if (code.empty()) {
     cb(nullptr);
     return false;
   }
 
-  // auto config = guest_config->wasmConfig();
-  auto guest_handle = loadGuest(code, guest_config,
-                                getGuestHandleFactory(*config.get(), scope, api, cluster_manager,
-                                                      dispatcher, lifecycle_notifier));
-  if (!guest_handle || guest_handle->guest()->isFailed()) {
+  auto guest = loadGuest(
+      code, guest_config,
+      getGuestFactory(*config.get(), scope, api, cluster_manager, dispatcher, lifecycle_notifier));
+  if (!guest || guest->isFailed()) {
     ENVOY_LOG_TO_LOGGER(Envoy::Logger::Registry::getLog(Envoy::Logger::Id::wasm), trace,
                         "Unable to create Guest");
     cb(nullptr);
     return false;
   }
-  cb(guest_handle);
+  cb(guest);
   return true;
-  // };
-  // return complete_cb(code);
 }
 
-std::shared_ptr<GuestHandle> loadGuest(const std::string& code, const std::shared_ptr<GuestConfig>&,
-                                       const GuestHandleFactory& factory) {
-  std::shared_ptr<GuestHandle> guest_handle;
-  guest_handle = factory();
-  if (!guest_handle) {
+std::shared_ptr<Guest> loadGuest(const std::string& code, const std::shared_ptr<GuestConfig>&,
+                                 const GuestFactory& factory) {
+  std::shared_ptr<Guest> guest;
+  guest = factory();
+  if (!guest) {
     return nullptr;
   }
-  if (!guest_handle->guest()->load(code)) {
-    guest_handle->guest()->fail(FailState::UnableToInitializeCode, "Failed to load Guest code");
+  if (!guest->load(code)) {
+    guest->fail(FailState::UnableToInitializeCode, "Failed to load Guest code");
     return nullptr;
   }
-  return guest_handle;
+  return guest;
 }
 
-InitializedGuestHandleSharedPtr
-getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& guest_handle_main,
+GuestAndGuestConfigSharedPtr
+getOrCreateThreadLocalInitializedGuest(const GuestSharedPtr& guest,
                                        const GuestConfigSharedPtr& guest_config,
                                        Event::Dispatcher& dispatcher) {
-  if (!guest_handle_main) {
+  if (!guest) {
     if (!guest_config->fail_open_) {
       ENVOY_LOG_TO_LOGGER(Envoy::Logger::Registry::getLog(Envoy::Logger::Id::wasm), critical,
-                          "InitializedGuest configured to fail closed failed to load");
+                          "module {} configured to fail closed failed to load");
     }
     // To handle the case when failed to create VMs and fail-open/close properly,
     // we still create InitializedGuestHandle with null Guest.
-    return std::make_shared<InitializedGuestHandle>(nullptr, guest_config);
+    return std::make_shared<InitializedGuestAndGuestConfig>(nullptr, guest_config);
   }
 
   auto key = guest_config->key();
-  // Get existing thread-local InitializedGuest handle.
+  // Get existing thread-local mapping if it exists.
   auto it = local_guest_configs.find(key);
   if (it != local_guest_configs.end()) {
     auto guest_config_handle = it->second.lock();
@@ -350,27 +344,24 @@ getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& guest_handle_
     local_guest_configs.erase(key);
   }
   // Get thread-local WasmVM.
-  auto guest_handle = getOrCreateThreadLocalGuestCodeCache(
-      guest_handle_main, getGuestHandleCloneFactory(dispatcher), key);
-  if (!guest_handle) {
+  auto thread_local_guest =
+      getOrCreateThreadLocalGuestCodeCache(guest, getGuestCloneFactory(dispatcher), key);
+  if (!thread_local_guest) {
     return nullptr;
   }
   // Create and initialize new thread-local InitializedGuest.
-  auto* guest_config_context =
-      guest_handle->guest()->getOrCreateInitializedGuestContext(guest_config);
+  auto* guest_config_context = thread_local_guest->getOrCreateInitializedGuestContext(guest_config);
   if (guest_config_context == nullptr) {
-    guest_handle_main->guest()->fail(FailState::StartFailed, "Failed to start thread-local Wasm");
+    guest->fail(FailState::StartFailed, "Failed to start thread-local Wasm");
     return nullptr;
   }
-  if (!guest_handle->guest()->initializeAndStart(guest_config_context)) {
-    guest_handle_main->guest()->fail(FailState::UnableToInitializeCode,
-                                     "Failed to initialize Wasm code");
+  if (!thread_local_guest->initializeAndStart(guest_config_context)) {
+    guest->fail(FailState::UnableToInitializeCode, "Failed to initialize Wasm code");
     return nullptr;
   }
-  auto guest_config_factory = getInitializedGuestHandleFactory();
-  auto guest_config_handle = guest_config_factory(guest_handle, guest_config);
-  local_guest_configs[key] = guest_config_handle;
-  guest_handle->guest()->runtime()->addFailCallback([key](FailState fail_state) {
+  auto mapping = std::make_shared<InitializedGuestAndGuestConfig>(thread_local_guest, guest_config);
+  local_guest_configs[key] = mapping;
+  thread_local_guest->runtime()->addFailCallback([key](FailState fail_state) {
     if (fail_state == FailState::RuntimeError) {
       // If VM failed, erase the entry so that:
       // 1) we can recreate the new thread local guest_config from the same
@@ -379,21 +370,21 @@ getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& guest_handle_
       local_guest_configs.erase(key);
     };
   });
-  return guest_config_handle;
+  return mapping;
 }
 
-static std::shared_ptr<GuestHandle>
-getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<GuestHandle>& handle,
-                                     const GuestHandleCloneFactory& clone_factory,
+static std::shared_ptr<Guest>
+getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<Guest>& guest,
+                                     const GuestCloneFactory& clone_factory,
                                      std::string_view vm_key) {
   // Create and initialize new thread-local WasmVM.
-  auto guest_handle = clone_factory(handle);
-  if (!guest_handle) {
-    handle->guest()->fail(FailState::UnableToCloneVm, "Failed to clone Base Wasm");
+  auto guest_clone = clone_factory(guest);
+  if (!guest_clone) {
+    guest->fail(FailState::UnableToCloneVm, "Failed to clone Base Wasm");
     return nullptr;
   }
 
-  guest_handle->guest()->runtime()->addFailCallback([vm_key](FailState fail_state) {
+  guest_clone->runtime()->addFailCallback([vm_key](FailState fail_state) {
     if (fail_state == FailState::RuntimeError) {
       // If VM failed, erase the entry so that:
       // 1) we can recreate the new thread local VM from the same guest_code_cache.
@@ -401,12 +392,8 @@ getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<GuestHandle>& handle,
       local_guest_configs.erase(std::string(vm_key));
     };
   });
-  return guest_handle;
+  return guest_clone;
 }
-
-// uint32_t InitializedGuestHandle::rootContextId() {
-//   return guest_handle_->guest()->getRootContext()->id();
-// }
 
 } // namespace HttpWasm
 } // namespace HttpFilters

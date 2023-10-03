@@ -26,27 +26,27 @@ public:
     if (!tls_slot_->currentThreadRegistered()) {
       return nullptr;
     }
-    InitializedGuestHandleSharedPtr handle = tls_slot_->get()->handle();
-    if (!handle) {
+    GuestAndGuestConfigSharedPtr mapping = tls_slot_->get()->mapping();
+    if (!mapping) {
       return nullptr;
     }
-    if (handle->wasmHandle()) {
-      guest = handle->wasmHandle()->guest().get();
+    if (mapping->guest()) {
+      guest = mapping->guest().get();
     }
     if (!guest || guest->isFailed()) {
-      if (handle->initializedGuest()->fail_open_) {
+      if (mapping->guestConfig()->fail_open_) {
         return nullptr; // Fail open skips adding this filter to callbacks.
       } else {
         return std::make_shared<Context>(
             nullptr,
-            handle->initializedGuest()); // Fail closed is handled by an empty Context.
+            mapping->guestConfig()); // Fail closed is handled by an empty Context.
       }
     }
-    return std::make_shared<Context>(guest, handle->initializedGuest());
+    return std::make_shared<Context>(guest, mapping->guestConfig());
   }
 
 private:
-  ThreadLocal::TypedSlotPtr<InitializedGuestHandleSharedPtrThreadLocal> tls_slot_;
+  ThreadLocal::TypedSlotPtr<GuestAndGuestConfigSharedPtrThreadLocal> tls_slot_;
 };
 
 using FilterConfigSharedPtr = std::shared_ptr<FilterConfig>;

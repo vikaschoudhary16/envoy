@@ -11,14 +11,14 @@ namespace HttpWasm {
 FilterConfig::FilterConfig(
     const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config,
     Server::Configuration::FactoryContext& context)
-    : tls_slot_(ThreadLocal::TypedSlot<InitializedGuestHandleSharedPtrThreadLocal>::makeUnique(
+    : tls_slot_(ThreadLocal::TypedSlot<GuestAndGuestConfigSharedPtrThreadLocal>::makeUnique(
           context.threadLocal())) {
   auto guestConfig = std::make_shared<GuestConfig>(config);
 
-  auto callback = [guestConfig, this](const GuestHandleSharedPtr& loaded_guest_code) {
+  auto callback = [guestConfig, this](const GuestSharedPtr& loaded_guest_code) {
     // NB: the Slot set() call doesn't complete inline, so all arguments must outlive this call.
     tls_slot_->set([loaded_guest_code, guestConfig](Event::Dispatcher& dispatcher) {
-      return std::make_shared<InitializedGuestHandleSharedPtrThreadLocal>(
+      return std::make_shared<GuestAndGuestConfigSharedPtrThreadLocal>(
           getOrCreateThreadLocalInitializedGuest(loaded_guest_code, guestConfig, dispatcher));
     });
   };
