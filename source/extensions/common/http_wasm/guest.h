@@ -31,19 +31,18 @@ public:
 
   Upstream::ClusterManager& clusterManager() const { return cluster_manager_; }
   Event::Dispatcher& dispatcher() { return dispatcher_; }
-  // Context* getRootContext() { return initialized_guest_context_.get(); }
+  // Context* getRootContext() { return guest_config_context_.get(); }
   std::shared_ptr<Guest> sharedThis() {
     return std::static_pointer_cast<Guest>(shared_from_this());
   }
 
   void initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notifier);
   bool load(const std::string& code);
-  bool initializeAndStart(Context* initialized_guest_context);
-  void start(Context* initialized_guest_context);
+  bool initializeAndStart(Context* guest_config_context);
+  void start(Context* guest_config_context);
 
-  // Returns the initialized_guest Context.
-  Context*
-  getOrCreateInitializedGuestContext(const std::shared_ptr<InitializedGuest>& initialized_guest);
+  // Returns the guest_config Context.
+  Context* getOrCreateInitializedGuestContext(const std::shared_ptr<GuestConfig>& guest_config);
 
   Runtime* runtime() const { return runtime_.get(); }
   Context* getContext(uint32_t id) {
@@ -59,21 +58,17 @@ public:
   const std::string& moduleBytecode() const { return module_bytecode_; }
   const std::unordered_map<uint32_t, std::string> functionNames() const { return function_names_; }
 
-  void timerReady(uint32_t initialized_guest_context_id);
-  void queueReady(uint32_t initialized_guest_context_id, uint32_t token);
+  void timerReady(uint32_t guest_config_context_id);
+  void queueReady(uint32_t guest_config_context_id, uint32_t token);
 
-  WasmResult done(Context* initialized_guest_context);
+  WasmResult done(Context* guest_config_context);
 
   // Proxy specific extension points.
   //
   void registerCallbacks(); // Register functions called out from Wasm.
   void getFunctions();      // Get functions call into Wasm.
-  virtual CallOnThreadFunction callOnThreadFunction() {
-    unimplemented();
-    return nullptr;
-  }
 
-  virtual Context* createContext(std::shared_ptr<InitializedGuest>& initialized_guest);
+  virtual Context* createContext(std::shared_ptr<GuestConfig>& guest_config);
   template <typename T> bool setDatatype(uint64_t ptr, const T& t);
   void fail(FailState fail_state, std::string_view message) {
     error(message);
@@ -101,7 +96,7 @@ protected:
   std::optional<Cloneable> started_from_;
 
   uint32_t next_context_id_ = 0;
-  std::unique_ptr<Context> initialized_guest_context_; // InitializedGuest Context
+  std::unique_ptr<Context> guest_config_context_; // InitializedGuest Context
   std::unordered_map<std::string, std::unique_ptr<Context>> pending_done_;
   std::unordered_set<std::unique_ptr<Context>> pending_delete_;
   std::unordered_map<uint32_t, Context*> contexts_;                      // Contains all contexts.
@@ -122,7 +117,7 @@ protected:
 
   std::shared_ptr<GuestHandle> parent_guest_handle_;
 
-  // Used by the uninitialized_guest to enable non-clonable thread local Guest(s) to be constructed.
+  // Used by the unguest_config to enable non-clonable thread local Guest(s) to be constructed.
   std::string module_bytecode_;
   std::string module_precompiled_;
   std::unordered_map<uint32_t, std::string> function_names_;
@@ -138,7 +133,7 @@ class GuestHandle : public ThreadLocal::ThreadLocalObject,
 public:
   explicit GuestHandle(std::shared_ptr<Guest> guest_) : guest_(guest_) {}
 
-  bool canary(const std::shared_ptr<InitializedGuest>& initialized_guest,
+  bool canary(const std::shared_ptr<GuestConfig>& guest_config,
               const GuestHandleCloneFactory& clone_factory);
 
   void kill() { guest_ = nullptr; }
@@ -147,25 +142,22 @@ public:
 
 protected:
   std::shared_ptr<Guest> guest_;
-  std::unordered_map<std::string, bool> initialized_guest_canary_cache_;
+  std::unordered_map<std::string, bool> guest_config_canary_cache_;
 };
 using GuestHandleSharedPtr = std::shared_ptr<GuestHandle>;
-
-std::string makeVmKey(std::string_view vm_id, std::string_view configuration,
-                      std::string_view code);
 
 class InitializedGuestHandle : public std::enable_shared_from_this<InitializedGuestHandle> {
 public:
   explicit InitializedGuestHandle(std::shared_ptr<GuestHandle> guest_handle,
-                                  std::shared_ptr<InitializedGuest> initialized_guest)
-      : initialized_guest_(initialized_guest), guest_handle_(guest_handle) {}
-  std::shared_ptr<InitializedGuest>& initializedGuest() { return initialized_guest_; }
+                                  std::shared_ptr<GuestConfig> guest_config)
+      : guest_config_(guest_config), guest_handle_(guest_handle) {}
+  std::shared_ptr<GuestConfig>& initializedGuest() { return guest_config_; }
   std::shared_ptr<Guest>& guest() { return guest_handle_->guest(); }
   GuestHandleSharedPtr& wasmHandle() { return guest_handle_; }
   // uint32_t rootContextId();
 
 private:
-  std::shared_ptr<InitializedGuest> initialized_guest_;
+  std::shared_ptr<GuestConfig> guest_config_;
   std::shared_ptr<GuestHandle> guest_handle_;
 };
 
@@ -181,18 +173,17 @@ private:
 };
 
 using loadGuestCallback = std::function<void(GuestHandleSharedPtr)>;
-bool loadGuest(const InitializedGuestSharedPtr& initialized_guest,
-               const Stats::ScopeSharedPtr& scope, Upstream::ClusterManager& cluster_manager,
-               Event::Dispatcher& dispatcher, Api::Api& api,
-               Envoy::Server::ServerLifecycleNotifier& lifecycle_notifier,
+bool loadGuest(const GuestConfigSharedPtr& guest_config, const Stats::ScopeSharedPtr& scope,
+               Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
+               Api::Api& api, Envoy::Server::ServerLifecycleNotifier& lifecycle_notifier,
                loadGuestCallback&& callback);
 // Returns nullptr on failure (i.e. initialization of the VM fails).
 std::shared_ptr<GuestHandle> loadGuest(const std::string& code,
-                                       const std::shared_ptr<InitializedGuest>& initialized_guest,
+                                       const std::shared_ptr<GuestConfig>& guest_config,
                                        const GuestHandleFactory& factory);
 
 using InitializedGuestHandleFactory = std::function<std::shared_ptr<InitializedGuestHandle>(
-    std::shared_ptr<GuestHandle> wasm, std::shared_ptr<InitializedGuest> initialized_guest)>;
+    std::shared_ptr<GuestHandle> wasm, std::shared_ptr<GuestConfig> guest_config)>;
 
 static std::shared_ptr<GuestHandle>
 getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<GuestHandle>& handle,
@@ -200,15 +191,15 @@ getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<GuestHandle>& handle,
                                      std::string_view vm_key);
 
 InitializedGuestHandleSharedPtr
-getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& uninitialized_guest,
-                                       const InitializedGuestSharedPtr& initialized_guest,
+getOrCreateThreadLocalInitializedGuest(const GuestHandleSharedPtr& unguest_config,
+                                       const GuestConfigSharedPtr& guest_config,
                                        Event::Dispatcher& dispatcher);
 
-std::shared_ptr<InitializedGuestHandle> getOrCreateThreadLocalInitializedGuest(
-    const std::shared_ptr<GuestHandle>& handle,
-    const std::shared_ptr<InitializedGuest>& initialized_guest,
-    const GuestHandleCloneFactory& clone_factory,
-    const InitializedGuestHandleFactory& initialized_guest_factory);
+std::shared_ptr<InitializedGuestHandle>
+getOrCreateThreadLocalInitializedGuest(const std::shared_ptr<GuestHandle>& handle,
+                                       const std::shared_ptr<GuestConfig>& guest_config,
+                                       const GuestHandleCloneFactory& clone_factory,
+                                       const InitializedGuestHandleFactory& guest_config_factory);
 
 template <typename T> inline bool Guest::setDatatype(uint64_t ptr, const T& t) {
   return runtime_->setMemory(ptr, sizeof(T), &t);

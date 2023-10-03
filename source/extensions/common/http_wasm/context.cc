@@ -45,7 +45,7 @@
 
 #define CHECK_FAIL(_stream_type, _stream_type2, _return_open, _return_closed)                      \
   if (isFailed()) {                                                                                \
-    if (initialized_guest_->fail_open_) {                                                          \
+    if (guest_config_->fail_open_) {                                                               \
       return _return_open;                                                                         \
     }                                                                                              \
     return _return_closed;                                                                         \
@@ -112,17 +112,17 @@ WasmResult Buffer::copyFrom(size_t start, std::string_view data, size_t length) 
 // Context::Context(Guest* wasm) : guest_(wasm), parent_context_(this) {
 //   guest_->contexts_[id_] = this;
 // }
-// Context::Context(Guest* wasm, const InitializedGuestSharedPtr& initialized_guest)
+// Context::Context(Guest* wasm, const GuestConfigSharedPtr& initialized_guest)
 //     : guest_(wasm), id_(wasm->allocContextId()), root_id_(initialized_guest->name_),
-//       root_log_prefix_(initialized_guest->name_), initialized_guest_(initialized_guest) {
+//       root_log_prefix_(initialized_guest->name_), guest_config_(initialized_guest) {
 //   current_context_ = this;
 //   root_local_info_ = &initialized_guest->localInfo();
 //   guest_->contexts_[id_] = this;
 // }
-Context::Context(Guest* wasm, InitializedGuestSharedPtr& initialized_guest)
-    // Context::Context(Guest* wasm, InitializedGuestHandleSharedPtr initialized_guest_handle)
+Context::Context(Guest* wasm, GuestConfigSharedPtr& initialized_guest)
+    // Context::Context(Guest* wasm, InitializedGuestHandleSharedPtr guest_config_handle)
     : guest_(wasm), id_(wasm != nullptr ? wasm->allocContextId() : 0),
-      initialized_guest_(initialized_guest) {
+      guest_config_(initialized_guest) {
   if (guest_ != nullptr) {
     guest_->contexts_[id_] = this;
   }
@@ -132,7 +132,7 @@ bool Context::isFailed() { return (guest_ == nullptr || guest_->isFailed()); }
 
 Runtime* Context::runtime() const { return guest_->runtime(); }
 // InitializedGuest* Context::initializedGuest() const { return
-// static_cast<InitializedGuest*>(initialized_guest_.get()); } Context* Context::rootContext()
+// static_cast<InitializedGuest*>(guest_config_.get()); } Context* Context::rootContext()
 // const { return static_cast<Context*>(root_context()); }
 Upstream::ClusterManager& Context::clusterManager() const { return guest()->clusterManager(); }
 
@@ -323,7 +323,7 @@ uint32_t Context::getLogLevel() {
   return static_cast<uint32_t>(ENVOY_LOGGER().level());
 }
 
-std::string_view Context::getConfiguration() { return initialized_guest_->configuration_; };
+std::string_view Context::getConfiguration() { return guest_config_->configuration_; };
 
 Http::FilterHeadersStatus convertFilterHeadersStatus(FilterHeadersStatus status) {
   switch (status) {

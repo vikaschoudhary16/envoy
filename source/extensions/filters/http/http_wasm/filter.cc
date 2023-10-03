@@ -13,22 +13,21 @@ FilterConfig::FilterConfig(
     Server::Configuration::FactoryContext& context)
     : tls_slot_(ThreadLocal::TypedSlot<InitializedGuestHandleSharedPtrThreadLocal>::makeUnique(
           context.threadLocal())) {
-  auto initializedGuest = std::make_shared<InitializedGuest>(config);
+  auto guestConfig = std::make_shared<GuestConfig>(config);
 
-  auto callback = [initializedGuest, this](const GuestHandleSharedPtr& uninitialized_guest) {
+  auto callback = [guestConfig, this](const GuestHandleSharedPtr& loaded_guest_code) {
     // NB: the Slot set() call doesn't complete inline, so all arguments must outlive this call.
-    tls_slot_->set([uninitialized_guest, initializedGuest](Event::Dispatcher& dispatcher) {
+    tls_slot_->set([loaded_guest_code, guestConfig](Event::Dispatcher& dispatcher) {
       return std::make_shared<InitializedGuestHandleSharedPtrThreadLocal>(
-          getOrCreateThreadLocalInitializedGuest(uninitialized_guest, initializedGuest,
-                                                 dispatcher));
+          getOrCreateThreadLocalInitializedGuest(loaded_guest_code, guestConfig, dispatcher));
     });
   };
 
-  if (!loadGuest(initializedGuest, context.scope().createScope(""), context.clusterManager(),
+  if (!loadGuest(guestConfig, context.scope().createScope(""), context.clusterManager(),
                  context.mainThreadDispatcher(), context.api(), context.lifecycleNotifier(),
                  std::move(callback))) {
     throw WasmException(
-        fmt::format("http-wasm: Unable to load guest module {}", initializedGuest->name_));
+        fmt::format("http-wasm: Unable to load guest module {}", guestConfig->name_));
   }
 }
 

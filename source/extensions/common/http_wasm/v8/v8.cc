@@ -336,7 +336,7 @@ bool V8::link(std::string_view /*debug_name*/) {
       auto it = host_functions_.find(std::string(module) + "." + std::string(name));
       if (it == host_functions_.end()) {
         fail(FailState::UnableToInitializeCode,
-             std::string("Failed to load Wasm module due to a missing import: ") +
+             std::string("Failed to initialize Wasm module due to a missing import: ") +
                  std::string(module) + "." + std::string(name));
         return false;
       }
@@ -344,7 +344,7 @@ bool V8::link(std::string_view /*debug_name*/) {
       if (!equalValTypes(import_type->func()->params(), func->type()->params()) ||
           !equalValTypes(import_type->func()->results(), func->type()->results())) {
         fail(FailState::UnableToInitializeCode,
-             std::string("Failed to load Wasm module due to an import type mismatch: ") +
+             std::string("Failed to initialize Wasm module due to an import type mismatch: ") +
                  std::string(module) + "." + std::string(name) +
                  ", want: " + printValTypes(import_type->func()->params()) + " -> " +
                  printValTypes(import_type->func()->results()) +

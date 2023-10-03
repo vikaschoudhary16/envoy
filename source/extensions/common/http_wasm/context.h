@@ -28,13 +28,13 @@ namespace HttpWasm {
 // using VmConfig = envoy::extensions::wasm::v3::VmConfig;
 // using CapabilityRestrictionConfig = envoy::extensions::wasm::v3::CapabilityRestrictionConfig;
 
-class InitializedGuestHandle;
-class InitializedGuest;
+class GuestConfigHandle;
+class GuestConfig;
 class Guest;
 class GuestHandle;
 
-using InitializedGuestSharedPtr = std::shared_ptr<InitializedGuest>;
-using InitializedGuestHandleSharedPtr = std::shared_ptr<InitializedGuestHandle>;
+using GuestConfigSharedPtr = std::shared_ptr<GuestConfig>;
+using GuestConfigHandleSharedPtr = std::shared_ptr<GuestConfigHandle>;
 using GuestHandleSharedPtr = std::shared_ptr<GuestHandle>;
 
 class Buffer {
@@ -75,12 +75,9 @@ class Context : public Logger::Loggable<Logger::Id::wasm>,
                 public Http::StreamFilter,
                 public std::enable_shared_from_this<Context> {
 public:
-  Context() = default; // Testing.
-                       // Context(Guest* guest); // Vm Context.
-  Context(Guest* guest, InitializedGuestSharedPtr& initialized_guest); // Root Context.
-  // Context(Guest* guest, const InitializedGuestSharedPtr& initialized_guest); // Root Context.
-  // Context(Guest* guest,
-  //         InitializedGuestHandleSharedPtr initialized_guest_handle); // Stream context.
+  Context() = default;                                            // Testing.
+  Context(Guest* guest, GuestConfigSharedPtr& initialized_guest); // Root Context.
+
   ~Context() override;
 
   Guest* guest() const { return guest_; }
@@ -99,7 +96,7 @@ public:
     return parent;
   }
   std::string_view log_prefix() const {
-    return isRootContext() ? root_log_prefix_ : initialized_guest_->log_prefix();
+    return isRootContext() ? root_log_prefix_ : guest_config_->log_prefix();
   }
   Upstream::ClusterManager& clusterManager() const;
   void maybeAddContentLength(uint64_t content_length);
@@ -189,7 +186,7 @@ protected:
   const Http::HeaderMap* getConstMap(WasmHeaderMapType type);
 
   const LocalInfo::LocalInfo* root_local_info_{nullptr}; // set only for root_context.
-  InitializedGuestHandleSharedPtr initialized_guest_handle_{nullptr};
+  GuestConfigHandleSharedPtr guest_config_handle_{nullptr};
 
   // HTTP callbacks.
   Envoy::Http::StreamDecoderFilterCallbacks* decoder_callbacks_{};
@@ -213,11 +210,11 @@ protected:
 
   Guest* guest_{nullptr};
   uint32_t id_{0};
-  uint32_t parent_context_id_{0};                       // 0 for roots and the general context.
-  std::string root_id_;                                 // set only in root context.
-  Context* parent_context_{nullptr};                    // set in all contexts.
-  std::string root_log_prefix_;                         // set only in root context.
-  std::shared_ptr<InitializedGuest> initialized_guest_; // set in root and stream contexts.
+  uint32_t parent_context_id_{0};             // 0 for roots and the general context.
+  std::string root_id_;                       // set only in root context.
+  Context* parent_context_{nullptr};          // set in all contexts.
+  std::string root_log_prefix_;               // set only in root context.
+  std::shared_ptr<GuestConfig> guest_config_; // set in stream contexts.
   bool in_vm_context_created_ = false;
   bool destroyed_ = false;
   bool stream_failed_ = false; // Set true after failStream is called in case of VM failure.
