@@ -17,11 +17,7 @@ class Context;
 
 // Any currently executing Wasm call context.
 Context* contextOrEffectiveContext();
-
-// extern thread_local Context* current_context_;
-
 namespace exports {
-
 // ABI functions exported from host to wasm.
 Word get_config(Word value_ptr_ptr, Word value_size_ptr);
 Word enable_features(Word features);

@@ -592,7 +592,7 @@ void V8::getModuleFunctionImpl(std::string_view function_name,
   }
   *function = [func, function_name, this](Context* context, Args... args) -> void {
     const bool log = cmpLogLevel(LogLevel::debug);
-    SaveRestoreContext saved_context(context);
+    SetCurrentContext current_context(context);
     wasm::own<wasm::Trap> trap = nullptr;
 
     wasm::Val params[] = {makeVal(args)...};
@@ -635,7 +635,7 @@ void V8::getModuleFunctionImpl(std::string_view function_name,
   }
   *function = [func, function_name, this](Context* context, Args... args) -> R {
     const bool log = cmpLogLevel(LogLevel::debug);
-    SaveRestoreContext saved_context(context);
+    SetCurrentContext current_context(context);
     wasm::Val results[1];
     wasm::own<wasm::Trap> trap = nullptr;
 

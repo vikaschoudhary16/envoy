@@ -342,13 +342,9 @@ protected:
 extern thread_local Context* current_context_;
 
 // Helper to save and restore thread local VM call context information to support reentrant calls.
-struct SaveRestoreContext {
-  explicit SaveRestoreContext(Context* context) {
-    saved_context = current_context_;
-    current_context_ = context;
-  }
-  ~SaveRestoreContext() { current_context_ = saved_context; }
-  Context* saved_context;
+struct SetCurrentContext {
+  explicit SetCurrentContext(Context* context) { current_context_ = context; }
+  ~SetCurrentContext() { current_context_ = nullptr; }
 };
 
 } // namespace HttpWasm

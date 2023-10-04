@@ -109,18 +109,7 @@ WasmResult Buffer::copyFrom(size_t start, std::string_view data, size_t length) 
   return WasmResult::Ok;
 }
 
-// Context::Context(Guest* wasm) : guest_(wasm), parent_context_(this) {
-//   guest_->contexts_[id_] = this;
-// }
-// Context::Context(Guest* wasm, const GuestConfigSharedPtr& initialized_guest)
-//     : guest_(wasm), id_(wasm->allocContextId()), root_id_(initialized_guest->name_),
-//       root_log_prefix_(initialized_guest->name_), guest_config_(initialized_guest) {
-//   current_context_ = this;
-//   root_local_info_ = &initialized_guest->localInfo();
-//   guest_->contexts_[id_] = this;
-// }
 Context::Context(Guest* wasm, GuestConfigSharedPtr& initialized_guest)
-    // Context::Context(Guest* wasm, InitializedGuestHandleSharedPtr guest_config_handle)
     : guest_(wasm), id_(wasm != nullptr ? wasm->allocContextId() : 0),
       guest_config_(initialized_guest) {
   if (guest_ != nullptr) {
@@ -131,9 +120,6 @@ Context::Context(Guest* wasm, GuestConfigSharedPtr& initialized_guest)
 bool Context::isFailed() { return (guest_ == nullptr || guest_->isFailed()); }
 
 Runtime* Context::runtime() const { return guest_->runtime(); }
-// InitializedGuest* Context::initializedGuest() const { return
-// static_cast<InitializedGuest*>(guest_config_.get()); } Context* Context::rootContext()
-// const { return static_cast<Context*>(root_context()); }
 Upstream::ClusterManager& Context::clusterManager() const { return guest()->clusterManager(); }
 
 void Context::error(std::string_view message) { ENVOY_LOG(trace, message); }
