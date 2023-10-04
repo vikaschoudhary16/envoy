@@ -237,10 +237,9 @@ void Guest::start(Context* context) {
   }
 }
 
-Context*
-Guest::getOrCreateInitializedGuestContext(const std::shared_ptr<GuestConfig>& guest_config) {
-  std::shared_ptr<GuestConfig> nonConstGuestConfig = guest_config;
-  auto context = std::unique_ptr<Context>(createContext(nonConstGuestConfig));
+Context* Guest::createGuestContext(const std::shared_ptr<GuestConfig>& guest_config) {
+  std::shared_ptr<GuestConfig> guestConfig = guest_config;
+  auto context = std::unique_ptr<Context>(createContext(guestConfig));
   auto* context_ptr = context.get();
   guest_config_context_ = std::move(context);
   return context_ptr;
@@ -264,14 +263,6 @@ static GuestCloneFactory getGuestCloneFactory(Event::Dispatcher& dispatcher) {
     return clone;
   };
 }
-
-// static InitializedGuestHandleFactory getInitializedGuestHandleFactory() {
-//   return [](GuestSharedPtr wasm,
-//             GuestConfigSharedPtr guest_config) -> std::shared_ptr<InitializedGuestAndGuestConfig>
-//             {
-//     return std::make_shared<InitializedGuestAndGuestConfig>(wasm, guest_config);
-//   };
-// }
 
 bool loadGuest(const GuestConfigSharedPtr& guest_config, const Stats::ScopeSharedPtr& scope,
                Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
@@ -342,19 +333,18 @@ getOrCreateThreadLocalInitializedGuest(const GuestSharedPtr& guest,
     local_guest_configs.erase(key);
   }
   // Get thread-local WasmVM.
-  auto thread_local_guest =
-      getOrCreateThreadLocalGuestCodeCache(guest, getGuestCloneFactory(dispatcher), key);
+  auto thread_local_guest = cloneGuest(guest, getGuestCloneFactory(dispatcher), key);
   if (!thread_local_guest) {
     return nullptr;
   }
-  // Create and initialize new thread-local InitializedGuest.
-  auto* guest_config_context = thread_local_guest->getOrCreateInitializedGuestContext(guest_config);
+  // Create and initialize new thread-local Guest.
+  auto* guest_config_context = thread_local_guest->createGuestContext(guest_config);
   if (guest_config_context == nullptr) {
-    guest->fail(FailState::StartFailed, "Failed to start thread-local Wasm");
+    guest->fail(FailState::StartFailed, "Failed to create thread-local guest config context");
     return nullptr;
   }
   if (!thread_local_guest->initializeAndStart(guest_config_context)) {
-    guest->fail(FailState::UnableToInitializeCode, "Failed to initialize Wasm code");
+    guest->fail(FailState::UnableToInitializeCode, "Failed to start guest");
     return nullptr;
   }
   auto mapping = std::make_shared<InitializedGuestAndGuestConfig>(thread_local_guest, guest_config);
@@ -371,10 +361,9 @@ getOrCreateThreadLocalInitializedGuest(const GuestSharedPtr& guest,
   return mapping;
 }
 
-static std::shared_ptr<Guest>
-getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<Guest>& guest,
-                                     const GuestCloneFactory& clone_factory,
-                                     std::string_view vm_key) {
+static std::shared_ptr<Guest> cloneGuest(const std::shared_ptr<Guest>& guest,
+                                         const GuestCloneFactory& clone_factory,
+                                         std::string_view vm_key) {
   // Create and initialize new thread-local WasmVM.
   auto guest_clone = clone_factory(guest);
   if (!guest_clone) {

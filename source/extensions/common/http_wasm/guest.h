@@ -19,6 +19,8 @@ using GuestFactory = std::function<std::shared_ptr<Guest>()>;
 using GuestCloneFactory = std::function<std::shared_ptr<Guest>(std::shared_ptr<Guest> guest)>;
 
 class GuestConfig;
+
+// Guest represents a single WebAssembly VM instance.
 class Guest : public Logger::Loggable<Logger::Id::wasm>,
               public std::enable_shared_from_this<Guest> {
 public:
@@ -39,7 +41,7 @@ public:
   void start(Context* guest_config_context);
 
   // Returns the guest_config Context.
-  Context* getOrCreateInitializedGuestContext(const std::shared_ptr<GuestConfig>& guest_config);
+  Context* createGuestContext(const std::shared_ptr<GuestConfig>& guest_config);
 
   Runtime* runtime() const { return runtime_.get(); }
   Context* getContext(uint32_t id) {
@@ -62,8 +64,8 @@ public:
 
   // Proxy specific extension points.
   //
-  void registerCallbacks(); // Register functions called out from Wasm.
-  void getFunctions();      // Get functions call into Wasm.
+  void registerCallbacks(); // Register functions called out from guest.
+  void getFunctions();      // Get functions call into guest.
 
   virtual Context* createContext(std::shared_ptr<GuestConfig>& guest_config);
   template <typename T> bool setDatatype(uint64_t ptr, const T& t);
@@ -82,7 +84,6 @@ protected:
   Stats::ScopeSharedPtr scope_;
   Api::Api& api_;
   Stats::StatNamePool stat_name_pool_;
-  // const Stats::StatName custom_stat_namespace_;
   Upstream::ClusterManager& cluster_manager_;
   Event::Dispatcher& dispatcher_;
   Event::PostCb server_shutdown_post_cb_;
@@ -125,6 +126,8 @@ protected:
 };
 using GuestSharedPtr = std::shared_ptr<Guest>;
 
+// InitializedGuestAndGuestConfig is a pair of a guest(running wasm instance) and its guest_config.
+// An instance of this class is used as a value of a thread local slot.
 class InitializedGuestAndGuestConfig
     : public std::enable_shared_from_this<InitializedGuestAndGuestConfig> {
 public:
@@ -151,6 +154,9 @@ private:
 };
 
 using loadGuestCallback = std::function<void(GuestSharedPtr)>;
+
+// loads guest module into the runtime without initializing it with GuestConfig and without linking
+// exported host functions. Initialization and linking is done in thread local context.
 bool loadGuest(const GuestConfigSharedPtr& guest_config, const Stats::ScopeSharedPtr& scope,
                Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
                Api::Api& api, Envoy::Server::ServerLifecycleNotifier& lifecycle_notifier,
@@ -160,10 +166,9 @@ std::shared_ptr<Guest> loadGuest(const std::string& code,
                                  const std::shared_ptr<GuestConfig>& guest_config,
                                  const GuestFactory& factory);
 
-static std::shared_ptr<Guest>
-getOrCreateThreadLocalGuestCodeCache(const std::shared_ptr<Guest>& handle,
-                                     const GuestCloneFactory& clone_factory,
-                                     std::string_view vm_key);
+static std::shared_ptr<Guest> cloneGuest(const std::shared_ptr<Guest>& handle,
+                                         const GuestCloneFactory& clone_factory,
+                                         std::string_view vm_key);
 
 GuestAndGuestConfigSharedPtr
 getOrCreateThreadLocalInitializedGuest(const GuestSharedPtr& guest,

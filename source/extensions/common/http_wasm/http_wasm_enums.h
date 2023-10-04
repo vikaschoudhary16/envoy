@@ -21,6 +21,7 @@
 
 #include <cstdint>
 
+// log levels corresponding to http-wasm
 enum class LogLevel : int32_t { debug = -1, info, warn, error, none, Max = none };
 enum class FilterStatus : int32_t { Continue = 0, StopIteration = 1 };
 enum class FilterHeadersStatus : int32_t {

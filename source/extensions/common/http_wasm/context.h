@@ -25,9 +25,6 @@ namespace Extensions {
 namespace HttpFilters {
 namespace HttpWasm {
 
-// using VmConfig = envoy::extensions::wasm::v3::VmConfig;
-// using CapabilityRestrictionConfig = envoy::extensions::wasm::v3::CapabilityRestrictionConfig;
-
 class GuestConfigHandle;
 class GuestConfig;
 class Guest;
@@ -81,23 +78,9 @@ public:
   ~Context() override;
 
   Guest* guest() const { return guest_; }
-  // virtual void maybeAddContentLength(uint64_t content_length);
   uint32_t id() const { return id_; }
-  // Root Contexts have the VM Context as a parent.
-  bool isRootContext() const { return parent_context_id_ == 0; }
   Context* parent_context() const { return parent_context_; }
-  Context* root_context() const {
-    const Context* previous = this;
-    Context* parent = parent_context_;
-    while (parent != previous) {
-      previous = parent;
-      parent = parent->parent_context_;
-    }
-    return parent;
-  }
-  std::string_view log_prefix() const {
-    return isRootContext() ? root_log_prefix_ : guest_config_->log_prefix();
-  }
+  std::string_view log_prefix() const { return guest_config_->log_prefix(); }
   Upstream::ClusterManager& clusterManager() const;
   void maybeAddContentLength(uint64_t content_length);
   Runtime* runtime() const;
@@ -185,7 +168,7 @@ protected:
   Http::HeaderMap* getMap(WasmHeaderMapType type);
   const Http::HeaderMap* getConstMap(WasmHeaderMapType type);
 
-  const LocalInfo::LocalInfo* root_local_info_{nullptr}; // set only for root_context.
+  // const LocalInfo::LocalInfo* root_local_info_{nullptr}; // set only for root_context.
   GuestConfigHandleSharedPtr guest_config_handle_{nullptr};
 
   // HTTP callbacks.
@@ -211,9 +194,7 @@ protected:
   Guest* guest_{nullptr};
   uint32_t id_{0};
   uint32_t parent_context_id_{0};             // 0 for roots and the general context.
-  std::string root_id_;                       // set only in root context.
   Context* parent_context_{nullptr};          // set in all contexts.
-  std::string root_log_prefix_;               // set only in root context.
   std::shared_ptr<GuestConfig> guest_config_; // set in stream contexts.
   bool in_vm_context_created_ = false;
   bool destroyed_ = false;
@@ -226,8 +207,6 @@ private:
   // helper functions
   FilterHeadersStatus convertVmCallResultToFilterHeadersStatus(uint64_t result);
   FilterDataStatus convertVmCallResultToFilterDataStatus(uint64_t result);
-  // FilterTrailersStatus convertVmCallResultToFilterTrailersStatus(uint64_t result);
-  // FilterMetadataStatus convertVmCallResultToFilterMetadataStatus(uint64_t result);
   uint32_t request_context_{0};
 };
 using ContextSharedPtr = std::shared_ptr<Context>;

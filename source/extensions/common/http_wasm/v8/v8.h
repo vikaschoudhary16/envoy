@@ -9,7 +9,7 @@ namespace HttpFilters {
 namespace HttpWasm {
 namespace V8 {
 
-std::unique_ptr<HttpWasm::Runtime> createV8Vm();
+std::unique_ptr<HttpWasm::Runtime> createV8();
 
 }
 } // namespace HttpWasm

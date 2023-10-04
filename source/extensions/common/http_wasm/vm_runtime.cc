@@ -14,9 +14,9 @@ namespace HttpFilters {
 namespace HttpWasm {
 
 RuntimePtr createV8Runtime() {
-  auto runtime_client = V8::createV8Vm();
-  runtime_client->logger() = std::make_unique<WasmScopeLogger>();
-  return runtime_client;
+  auto runtime = V8::createV8();
+  runtime->logger() = std::make_unique<WasmScopeLogger>();
+  return runtime;
 }
 
 } // namespace HttpWasm

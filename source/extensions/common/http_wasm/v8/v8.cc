@@ -697,7 +697,7 @@ std::string V8::getFailMessage(std::string_view function_name, wasm::own<wasm::T
   }
   return message;
 }
-std::unique_ptr<Runtime> createV8Vm() { return std::make_unique<V8>(); }
+std::unique_ptr<Runtime> createV8() { return std::make_unique<V8>(); }
 
 } // namespace V8
 } // namespace HttpWasm

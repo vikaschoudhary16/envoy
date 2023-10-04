@@ -341,7 +341,10 @@ protected:
 // over all workers as with ThreadLocal data.
 extern thread_local Context* current_context_;
 
-// Helper to save and restore thread local VM call context information to support reentrant calls.
+// Helper to set and unset thread local VM call context information to support reentrant calls. For
+// example, handleRequest call is made host to vm and while this call is active, vm to host calls
+// are made, for example to get/set headers. These vm to host calls need to know the context of the
+// original call.
 struct SetCurrentContext {
   explicit SetCurrentContext(Context* context) { current_context_ = context; }
   ~SetCurrentContext() { current_context_ = nullptr; }
