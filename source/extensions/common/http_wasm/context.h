@@ -145,7 +145,7 @@ public:
   bool isFailed();
 
   // General
-  WasmResult log(uint32_t level, std::string_view message);
+  WasmResult log(int32_t level, std::string_view message);
   std::string_view getConfiguration();
   void sendLocalResponse(WasmBufferType);
   void setLocalResponseCode(uint32_t);

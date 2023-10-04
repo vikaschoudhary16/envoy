@@ -295,7 +295,7 @@ const StreamInfo::StreamInfo* Context::getConstRequestStreamInfo() const {
   return nullptr;
 }
 
-WasmResult Context::log(uint32_t level, std::string_view message) {
+WasmResult Context::log(int32_t level, std::string_view message) {
   switch (static_cast<LogLevel>(level)) {
   case LogLevel::debug:
     ENVOY_LOG(debug, "httpwasm log{}: {}", log_prefix(), message);

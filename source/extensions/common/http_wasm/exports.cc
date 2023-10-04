@@ -45,7 +45,8 @@ Word log_enabled(Word log_level) {
 }
 
 void log(Word level, Word address, Word size) {
-  if (level >= static_cast<uint64_t>(LogLevel::Max)) { // Max is none logs
+  int32_t signedLevel = static_cast<int32_t>(level.u64_);
+  if (signedLevel >= static_cast<int32_t>(LogLevel::Max)) { // Max is none logs
     return;
   }
   auto* context = contextOrEffectiveContext();
@@ -53,7 +54,7 @@ void log(Word level, Word address, Word size) {
   if (!message) {
     return;
   }
-  context->log(level, message.value());
+  context->log(signedLevel, message.value());
 }
 
 // Header ABIs...
