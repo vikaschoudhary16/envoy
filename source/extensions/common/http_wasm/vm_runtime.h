@@ -74,9 +74,25 @@ using WasmCallI64 = std::function<WasmCallInFuncType<N, int64_t, Context*, Word>
 class WasmScopeLogger : public Logger::Loggable<Logger::Id::wasm> {
 public:
   WasmScopeLogger* clone() { return new WasmScopeLogger(); }
-  LogLevel getLogLevel();
-  void error(std::string_view message);
-  void debug(std::string_view message);
+  LogLevel getLogLevel() {
+    switch (ENVOY_LOGGER().level()) {
+    case spdlog::level::trace:
+      return LogLevel::debug;
+    case spdlog::level::debug:
+      return LogLevel::debug;
+    case spdlog::level::info:
+      return LogLevel::info;
+    case spdlog::level::warn:
+      return LogLevel::warn;
+    case spdlog::level::err:
+      return LogLevel::error;
+    default:
+      return LogLevel::none;
+    }
+  }
+
+  void error(std::string_view message) { ENVOY_LOG(error, message); }
+  void debug(std::string_view message) { ENVOY_LOG(debug, message); }
 };
 
 // Exceptions for issues with the WebAssembly code.

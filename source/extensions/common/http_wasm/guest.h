@@ -17,7 +17,6 @@ using EnvironmentVariableMap = std::unordered_map<std::string, std::string>;
 using WasmVmFactory = std::function<std::unique_ptr<Runtime>()>;
 using GuestFactory = std::function<std::shared_ptr<Guest>()>;
 using GuestCloneFactory = std::function<std::shared_ptr<Guest>(std::shared_ptr<Guest> guest)>;
-using CallOnThreadFunction = std::function<void(std::function<void()>)>;
 
 class GuestConfig;
 class Guest : public Logger::Loggable<Logger::Id::wasm>,
@@ -30,7 +29,6 @@ public:
 
   Upstream::ClusterManager& clusterManager() const { return cluster_manager_; }
   Event::Dispatcher& dispatcher() { return dispatcher_; }
-  // Context* getRootContext() { return guest_config_context_.get(); }
   std::shared_ptr<Guest> sharedThis() {
     return std::static_pointer_cast<Guest>(shared_from_this());
   }
@@ -127,24 +125,6 @@ protected:
 };
 using GuestSharedPtr = std::shared_ptr<Guest>;
 
-class GuestHandle : public ThreadLocal::ThreadLocalObject,
-                    public std::enable_shared_from_this<GuestHandle> {
-public:
-  explicit GuestHandle(std::shared_ptr<Guest> guest_) : guest_(guest_) {}
-
-  bool canary(const std::shared_ptr<GuestConfig>& guest_config,
-              const GuestCloneFactory& clone_factory);
-
-  void kill() { guest_ = nullptr; }
-
-  std::shared_ptr<Guest>& guest() { return guest_; }
-
-protected:
-  std::shared_ptr<Guest> guest_;
-  std::unordered_map<std::string, bool> guest_config_canary_cache_;
-};
-using GuestHandleSharedPtr = std::shared_ptr<GuestHandle>;
-
 class InitializedGuestAndGuestConfig
     : public std::enable_shared_from_this<InitializedGuestAndGuestConfig> {
 public:
@@ -189,13 +169,6 @@ GuestAndGuestConfigSharedPtr
 getOrCreateThreadLocalInitializedGuest(const GuestSharedPtr& guest,
                                        const GuestConfigSharedPtr& guest_config,
                                        Event::Dispatcher& dispatcher);
-
-// GuestAndGuestConfigSharedPtr
-// getOrCreateThreadLocalInitializedGuest(const std::shared_ptr<GuestHandle>& handle,
-//                                        const std::shared_ptr<GuestConfig>& guest_config,
-//                                        const GuestCloneFactory& clone_factory,
-//                                        const InitializedGuestHandleFactory&
-//                                        guest_config_factory);
 
 template <typename T> inline bool Guest::setDatatype(uint64_t ptr, const T& t) {
   return runtime_->setMemory(ptr, sizeof(T), &t);

@@ -18,8 +18,6 @@ thread_local std::unordered_map<std::string, std::weak_ptr<InitializedGuestAndGu
     local_guest_configs;
 const std::string INLINE_STRING = "<inline>";
 
-inline Guest* getGuest(GuestHandleSharedPtr& guest_handle) { return guest_handle->guest().get(); }
-
 std::vector<uint8_t> Sha256(const std::vector<std::string_view>& parts) {
   uint8_t sha256[SHA256_DIGEST_LENGTH];
   SHA256_CTX sha_ctx;
