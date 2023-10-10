@@ -71,14 +71,14 @@ Upstream::HostDescriptionConstSharedPtr getHost(const StreamInfo::StreamInfo* in
 
 } // namespace
 
-size_t Buffer::size() const {
+size_t WasmBuffer::size() const {
   if (const_buffer_instance_) {
     return const_buffer_instance_->length();
   }
   return 0;
 }
 
-int64_t Buffer::copyTo(void* ptr, uint64_t dest_size) {
+int64_t WasmBuffer::copyTo(void* ptr, uint64_t dest_size) {
   // if dest_size is 0, do not copy, spec says panic
   uint64_t eof = 1;
   eof = (eof << 32);
@@ -98,29 +98,41 @@ int64_t Buffer::copyTo(void* ptr, uint64_t dest_size) {
   return (uint64_t(bytes_to_copy) | eof);
 }
 
-WasmResult Buffer::copyFrom(size_t start, std::string_view data, size_t length) {
+WasmResult WasmBuffer::copyFrom(std::string_view data, size_t length) {
   if (buffer_instance_ != nullptr) {
     if (length != 0) {
-      buffer_instance_->drain(buffer_instance_->length());
+      buffer_instance_->drain(const_buffer_instance_->length());
     }
-    buffer_instance_->prepend(toAbslStringView(data));
+    Buffer::OwnedImpl new_buf;
+    new_buf.add(data);
+    buffer_instance_->move(new_buf);
     return WasmResult::Ok;
   }
   return WasmResult::Ok;
 }
 
-Context::Context(Guest* wasm, GuestConfigSharedPtr& initialized_guest)
-    : guest_(wasm), id_(wasm != nullptr ? wasm->allocContextId() : 0),
-      guest_config_(initialized_guest) {
+Context::Context(Guest* guest, GuestConfigSharedPtr& guest_config)
+    : guest_(guest), id_(guest != nullptr ? guest->allocContextId() : 0),
+      guest_config_(guest_config) {
   if (guest_ != nullptr) {
     guest_->contexts_[id_] = this;
   }
 }
 
+void Context::overwriteRequestBody(std::string_view data, size_t length) {
+  decoder_callbacks_->modifyDecodingBuffer([data](Buffer::Instance& dec_buf) {
+    Buffer::OwnedImpl new_buf;
+    new_buf.add(data);
+    // effectively swap(data, json_buf)
+    dec_buf.drain(dec_buf.length());
+    dec_buf.move(new_buf);
+  });
+  request_headers_->setContentLength(length);
+}
+
 bool Context::isFailed() { return (guest_ == nullptr || guest_->isFailed()); }
 
 Runtime* Context::runtime() const { return guest_->runtime(); }
-Upstream::ClusterManager& Context::clusterManager() const { return guest()->clusterManager(); }
 
 void Context::error(std::string_view message) { ENVOY_LOG(trace, message); }
 
@@ -204,7 +216,6 @@ WasmResult Context::getHeaderNames(WasmHeaderMapType type, std::vector<std::stri
 
   map->iterate([&keys](const Http::HeaderEntry& header) -> Http::HeaderMap::Iterate {
     keys.emplace_back(header.key().getStringView());
-    // ENVOY_LOG(warn, "header key: {}", header.key().getStringView());
     return Http::HeaderMap::Iterate::Continue;
   });
 
@@ -255,12 +266,13 @@ WasmResult Context::getHeaderMapSize(WasmHeaderMapType type, uint32_t* result) {
   return WasmResult::Ok;
 }
 
-// Buffer
+// WasmBuffer
 
-Buffer* Context::getBuffer(WasmBufferType type) {
+WasmBuffer* Context::getBuffer(WasmBufferType type) {
   switch (type) {
   case WasmBufferType::HttpRequestBody:
-    return buffer_.set(request_body_buffer_);
+    // return buffer_.set(request_body_buffer_);
+    return buffer_.set(&request_buffer_);
   case WasmBufferType::HttpResponseBody:
     if (response_body_buffer_ == nullptr) {
       return nullptr;
@@ -347,10 +359,6 @@ Http::FilterDataStatus convertFilterDataStatus(FilterDataStatus status) {
     return Http::FilterDataStatus::Continue;
   case FilterDataStatus::StopIteration:
     return Http::FilterDataStatus::StopIterationNoBuffer;
-    // case FilterDataStatus::StopIterationAndWatermark:
-    //   return Http::FilterDataStatus::StopIterationAndWatermark;
-    // case FilterDataStatus::StopIterationNoBuffer:
-    //   return Http::FilterDataStatus::StopIterationNoBuffer;
   }
 };
 
@@ -416,16 +424,23 @@ void Context::setLocalResponseCode(uint32_t response_code) {
 }
 
 void Context::setLocalResponseBody(std::string_view body) { local_response_body_ = body; }
+
 Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers, bool end_stream) {
   in_vm_context_created_ = true;
   request_headers_ = &headers;
-  if (!end_stream) {
-    // If this is not a header-only request, we will handle request in decodeData.
-    return Http::FilterHeadersStatus::StopIteration;
-  }
+
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
   clearLocalResponse();
   end_of_stream_ = end_stream;
+
+  // guest expects request body and this is not a header-only so return and call handle_request
+  // when body is received.
+  if (!end_stream) {
+    decoder_callbacks_->setDecoderBufferLimit(guest_config_->config().max_request_bytes().value());
+    onRequestHeaders(headerSize(&headers), end_stream);
+    // request has a body, so we will handle request in decodeData.
+    return Http::FilterHeadersStatus::StopIteration;
+  }
   return convertFilterHeadersStatus(onRequestHeaders(headerSize(&headers), end_stream));
 }
 
@@ -434,15 +449,31 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
   if (!in_vm_context_created_) {
     return Http::FilterDataStatus::Continue;
   }
+
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
   clearLocalResponse();
-  request_body_buffer_ = &data;
-  end_of_stream_ = end_stream;
-  const auto buffer = getBuffer(WasmBufferType::HttpRequestBody);
-  const auto buffer_size = (buffer == nullptr) ? 0 : buffer->size();
-  buffering_request_body_ = true;
-  auto result = convertFilterDataStatus(onRequestBody(buffer_size, end_stream));
-  return result;
+
+  if (!end_stream) {
+    if (!(((this->getGuestFeatureSet() & 1) ||
+           (this->parent_context_ && !(this->parent_context_->getGuestFeatureSet() & 1))))) {
+      ENVOY_LOG(info, "decodeData: guest has not enable request buffering. Skipping to send "
+                      "request body in chunks");
+      return Http::FilterDataStatus::Continue;
+    }
+
+    if (guest_config_->config().max_request_bytes().value() == 0) {
+      ENVOY_LOG(error, "{}: decodeData: max_request_body_size is not set", guest_config_->name_);
+    } else {
+      ENVOY_LOG(info, "decodeData: buffering request body");
+    }
+    return Http::FilterDataStatus::StopIterationAndBuffer;
+  }
+  decoder_callbacks_->addDecodedData(data, false);
+
+  request_buffer_ = *decoder_callbacks_->decodingBuffer();
+  request_headers_->setContentLength(request_buffer_.length());
+
+  return convertFilterDataStatus(onRequestBody());
 }
 
 Http::FilterTrailersStatus Context::decodeTrailers(Http::RequestTrailerMap& trailers) {
@@ -561,17 +592,6 @@ FilterDataStatus Context::convertVmCallResultToFilterDataStatus(uint64_t result)
   return static_cast<FilterDataStatus>(result);
 }
 
-// FilterTrailersStatus Context::convertVmCallResultToFilterTrailersStatus(uint64_t result) {
-//   return static_cast<FilterTrailersStatus>(result);
-// }
-
-// FilterMetadataStatus Context::convertVmCallResultToFilterMetadataStatus(uint64_t result) {
-//   if (static_cast<FilterMetadataStatus>(result) == FilterMetadataStatus::Continue) {
-//     return FilterMetadataStatus::Continue;
-//   }
-//   return FilterMetadataStatus::Continue; // This is currently the only return code.
-// }
-
 Context::~Context() {
   // Do not remove vm context which has the same lifetime as guest_.
   if (id_ != 0U) {
@@ -589,7 +609,7 @@ FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stre
   return convertVmCallResultToFilterHeadersStatus(next);
 }
 
-FilterDataStatus Context::onRequestBody(uint32_t body_length, bool end_of_stream) {
+FilterDataStatus Context::onRequestBody() {
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIteration);
   const auto result = guest_->handle_request_(this);
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIteration);

@@ -52,11 +52,9 @@ void Guest::initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notif
                                       });
 }
 
-Guest::Guest(GuestConfig& config, const Stats::ScopeSharedPtr& scope, Api::Api& api,
-             Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher)
-    : scope_(scope), api_(api), stat_name_pool_(scope_->symbolTable()),
-      cluster_manager_(cluster_manager), dispatcher_(dispatcher),
-      time_source_(dispatcher.timeSource()), runtime_(createV8Runtime()) {
+Guest::Guest(const Stats::ScopeSharedPtr& scope, Api::Api& api, Event::Dispatcher& dispatcher)
+    : scope_(scope), api_(api), dispatcher_(dispatcher), time_source_(dispatcher.timeSource()),
+      runtime_(createV8Runtime()) {
 
   if (!runtime_) {
     failed_ = FailState::UnableToCreateVm;
@@ -69,7 +67,6 @@ Guest::Guest(GuestConfig& config, const Stats::ScopeSharedPtr& scope, Api::Api& 
 
 Guest::Guest(GuestSharedPtr guest, Event::Dispatcher& dispatcher)
     : std::enable_shared_from_this<Guest>(*guest), scope_(guest->scope_), api_(guest->api_),
-      stat_name_pool_(scope_->symbolTable()), cluster_manager_(guest->clusterManager()),
       dispatcher_(dispatcher), time_source_(dispatcher.timeSource()) {
   parent_guest_ = guest;
   runtime_ = guest->runtime()->clone();
@@ -245,16 +242,12 @@ Context* Guest::createGuestContext(const std::shared_ptr<GuestConfig>& guest_con
   return context_ptr;
 };
 
-static GuestFactory getGuestFactory(GuestConfig& guest_config, const Stats::ScopeSharedPtr& scope,
-                                    Api::Api& api, Upstream::ClusterManager& cluster_manager,
-                                    Event::Dispatcher& dispatcher,
-                                    Server::ServerLifecycleNotifier& lifecycle_notifier) {
-  return [&guest_config, &scope, &api, &cluster_manager, &dispatcher,
-          &lifecycle_notifier]() -> GuestSharedPtr {
-    auto guest = std::make_shared<Guest>(guest_config, scope, api, cluster_manager, dispatcher);
-    guest->initializeLifecycle(lifecycle_notifier);
-    return std::move(guest);
-  };
+GuestSharedPtr newGuest(const Stats::ScopeSharedPtr& scope, Api::Api& api,
+                        Event::Dispatcher& dispatcher,
+                        Server::ServerLifecycleNotifier& lifecycle_notifier) {
+  auto guest = std::make_shared<Guest>(scope, api, dispatcher);
+  guest->initializeLifecycle(lifecycle_notifier);
+  return std::move(guest);
 }
 
 static GuestCloneFactory getGuestCloneFactory(Event::Dispatcher& dispatcher) {
@@ -264,10 +257,10 @@ static GuestCloneFactory getGuestCloneFactory(Event::Dispatcher& dispatcher) {
   };
 }
 
-bool loadGuest(const GuestConfigSharedPtr& guest_config, const Stats::ScopeSharedPtr& scope,
-               Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
-               Api::Api& api, Server::ServerLifecycleNotifier& lifecycle_notifier,
-               loadGuestCallback&& cb) {
+bool loadGuestAndSetTlsSlot(const GuestConfigSharedPtr& guest_config,
+                            const Stats::ScopeSharedPtr& scope, Event::Dispatcher& dispatcher,
+                            Api::Api& api, Server::ServerLifecycleNotifier& lifecycle_notifier,
+                            loadGuestCallbackToRegisterTlsSlot&& register_tls_slot_callback) {
   std::string code;
   auto config = guest_config;
 
@@ -276,35 +269,28 @@ bool loadGuest(const GuestConfigSharedPtr& guest_config, const Stats::ScopeShare
   }
 
   if (code.empty()) {
-    cb(nullptr);
+    register_tls_slot_callback(nullptr);
     return false;
   }
 
-  auto guest = loadGuest(
-      code, guest_config,
-      getGuestFactory(*config.get(), scope, api, cluster_manager, dispatcher, lifecycle_notifier));
-  if (!guest || guest->isFailed()) {
-    ENVOY_LOG_TO_LOGGER(Envoy::Logger::Registry::getLog(Envoy::Logger::Id::wasm), trace,
-                        "Unable to create Guest");
-    cb(nullptr);
-    return false;
-  }
-  cb(guest);
-  return true;
-}
-
-std::shared_ptr<Guest> loadGuest(const std::string& code, const std::shared_ptr<GuestConfig>&,
-                                 const GuestFactory& factory) {
   std::shared_ptr<Guest> guest;
-  guest = factory();
+  guest = newGuest(scope, api, dispatcher, lifecycle_notifier);
   if (!guest) {
-    return nullptr;
+    ENVOY_LOG_TO_LOGGER(Envoy::Logger::Registry::getLog(Envoy::Logger::Id::wasm), error,
+                        "Unable to create Guest");
+    register_tls_slot_callback(nullptr);
+    return false;
   }
   if (!guest->load(code)) {
     guest->fail(FailState::UnableToInitializeCode, "Failed to load Guest code");
-    return nullptr;
+    ENVOY_LOG_TO_LOGGER(Envoy::Logger::Registry::getLog(Envoy::Logger::Id::wasm), trace,
+                        "Unable to load Guest");
+    register_tls_slot_callback(nullptr);
+    return false;
   }
-  return guest;
+
+  register_tls_slot_callback(guest);
+  return true;
 }
 
 GuestAndGuestConfigSharedPtr
@@ -338,12 +324,12 @@ getOrCreateThreadLocalInitializedGuest(const GuestSharedPtr& guest,
     return nullptr;
   }
   // Create and initialize new thread-local Guest.
-  auto* guest_config_context = thread_local_guest->createGuestContext(guest_config);
-  if (guest_config_context == nullptr) {
-    guest->fail(FailState::StartFailed, "Failed to create thread-local guest config context");
+  auto* guest_context = thread_local_guest->createGuestContext(guest_config);
+  if (guest_context == nullptr) {
+    guest->fail(FailState::StartFailed, "Failed to create thread-local guest context");
     return nullptr;
   }
-  if (!thread_local_guest->initializeAndStart(guest_config_context)) {
+  if (!thread_local_guest->initializeAndStart(guest_context)) {
     guest->fail(FailState::UnableToInitializeCode, "Failed to start guest");
     return nullptr;
   }

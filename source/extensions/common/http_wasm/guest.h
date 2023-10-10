@@ -24,12 +24,12 @@ class GuestConfig;
 class Guest : public Logger::Loggable<Logger::Id::wasm>,
               public std::enable_shared_from_this<Guest> {
 public:
-  Guest(GuestConfig& config, const Stats::ScopeSharedPtr& scope, Api::Api& api,
-        Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher);
-  Guest(std::shared_ptr<Guest> other, Event::Dispatcher& dispatcher);
+  // This is used to create clonable main thread local Guest
+  Guest(const Stats::ScopeSharedPtr& scope, Api::Api& api, Event::Dispatcher& dispatcher);
+  // This is used to create non-clonable thread local Guest, cloned from main thread Guest.
+  Guest(std::shared_ptr<Guest> main_thread_guest, Event::Dispatcher& dispatcher);
   ~Guest();
 
-  Upstream::ClusterManager& clusterManager() const { return cluster_manager_; }
   Event::Dispatcher& dispatcher() { return dispatcher_; }
   std::shared_ptr<Guest> sharedThis() {
     return std::static_pointer_cast<Guest>(shared_from_this());
@@ -37,8 +37,10 @@ public:
 
   void initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notifier);
   bool load(const std::string& code);
-  bool initializeAndStart(Context* guest_config_context);
-  void start(Context* guest_config_context);
+
+  // This is used to link the exported host functions and start the thread local guest.
+  bool initializeAndStart(Context* guest_context);
+  void start(Context* guest_context);
 
   // Returns the guest_config Context.
   Context* createGuestContext(const std::shared_ptr<GuestConfig>& guest_config);
@@ -57,10 +59,7 @@ public:
   const std::string& moduleBytecode() const { return module_bytecode_; }
   const std::unordered_map<uint32_t, std::string> functionNames() const { return function_names_; }
 
-  void timerReady(uint32_t guest_config_context_id);
-  void queueReady(uint32_t guest_config_context_id, uint32_t token);
-
-  WasmResult done(Context* guest_config_context);
+  WasmResult done(Context* guest_context);
 
   // Proxy specific extension points.
   //
@@ -83,22 +82,18 @@ protected:
 
   Stats::ScopeSharedPtr scope_;
   Api::Api& api_;
-  Stats::StatNamePool stat_name_pool_;
-  Upstream::ClusterManager& cluster_manager_;
   Event::Dispatcher& dispatcher_;
   Event::PostCb server_shutdown_post_cb_;
-  absl::flat_hash_map<uint32_t, Event::TimerPtr> timer_; // per context id.
   TimeSource& time_source_;
 
   std::unique_ptr<Runtime> runtime_;
   std::optional<Cloneable> started_from_;
 
   uint32_t next_context_id_ = 0;
-  std::unique_ptr<Context> guest_config_context_; // InitializedGuest Context
+  std::unique_ptr<Context> guest_config_context_; // Guest context
   std::unordered_map<std::string, std::unique_ptr<Context>> pending_done_;
   std::unordered_set<std::unique_ptr<Context>> pending_delete_;
-  std::unordered_map<uint32_t, Context*> contexts_;                      // Contains all contexts.
-  std::unordered_map<uint32_t, std::chrono::milliseconds> timer_period_; // per context id.
+  std::unordered_map<uint32_t, Context*> contexts_; // Contains all contexts.
   std::unordered_map<std::string, std::string>
       envs_; // environment variables passed through wasi.environ_get
 
@@ -153,18 +148,15 @@ private:
   GuestAndGuestConfigSharedPtr mapping_;
 };
 
-using loadGuestCallback = std::function<void(GuestSharedPtr)>;
+using loadGuestCallbackToRegisterTlsSlot = std::function<void(GuestSharedPtr)>;
 
-// loads guest module into the runtime without initializing it with GuestConfig and without linking
-// exported host functions. Initialization and linking is done in thread local context.
-bool loadGuest(const GuestConfigSharedPtr& guest_config, const Stats::ScopeSharedPtr& scope,
-               Upstream::ClusterManager& cluster_manager, Event::Dispatcher& dispatcher,
-               Api::Api& api, Envoy::Server::ServerLifecycleNotifier& lifecycle_notifier,
-               loadGuestCallback&& callback);
-// Returns nullptr on failure (i.e. initialization of the VM fails).
-std::shared_ptr<Guest> loadGuest(const std::string& code,
-                                 const std::shared_ptr<GuestConfig>& guest_config,
-                                 const GuestFactory& factory);
+// This is used to read the module binary and load the module into runtime from main thread,
+// which is used later to create the cloneable thread local guest instances.
+bool loadGuestAndSetTlsSlot(const GuestConfigSharedPtr& guest_config,
+                            const Stats::ScopeSharedPtr& scope, Event::Dispatcher& dispatcher,
+                            Api::Api& api,
+                            Envoy::Server::ServerLifecycleNotifier& lifecycle_notifier,
+                            loadGuestCallbackToRegisterTlsSlot&& callback);
 
 static std::shared_ptr<Guest> cloneGuest(const std::shared_ptr<Guest>& handle,
                                          const GuestCloneFactory& clone_factory,

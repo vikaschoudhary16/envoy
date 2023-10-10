@@ -15,7 +15,7 @@ FilterConfig::FilterConfig(
           context.threadLocal())) {
   auto guestConfig = std::make_shared<GuestConfig>(config);
 
-  auto callback = [guestConfig, this](const GuestSharedPtr& loaded_guest_code) {
+  auto tlsSlotRegistrationCallback = [guestConfig, this](const GuestSharedPtr& loaded_guest_code) {
     // NB: the Slot set() call doesn't complete inline, so all arguments must outlive this call.
     tls_slot_->set([loaded_guest_code, guestConfig](Event::Dispatcher& dispatcher) {
       return std::make_shared<GuestAndGuestConfigSharedPtrThreadLocal>(
@@ -23,9 +23,9 @@ FilterConfig::FilterConfig(
     });
   };
 
-  if (!loadGuest(guestConfig, context.scope().createScope(""), context.clusterManager(),
-                 context.mainThreadDispatcher(), context.api(), context.lifecycleNotifier(),
-                 std::move(callback))) {
+  if (!loadGuestAndSetTlsSlot(
+          guestConfig, context.scope().createScope(""), context.mainThreadDispatcher(),
+          context.api(), context.lifecycleNotifier(), std::move(tlsSlotRegistrationCallback))) {
     throw WasmException(
         fmt::format("http-wasm: Unable to load guest module {}", guestConfig->name_));
   }

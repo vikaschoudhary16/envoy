@@ -34,8 +34,15 @@ Word get_config(Word value_ptr, Word value_size) {
 }
 
 Word enable_features(Word features) {
-  // TODO: implement
-  return 3;
+  auto* context = contextOrEffectiveContext();
+  if (features & 1 && context) {
+    context->setBufferRequest();
+  }
+  if (features & 2 && context) {
+    context->setBufferResponse();
+    return 3;
+  }
+  return context->getGuestFeatureSet();
 }
 
 // Logging ABIs...
@@ -232,8 +239,9 @@ void write_body(Word kind, Word val, Word size) {
     context->setLocalResponseBody(srcMemory.value());
     return;
   }
-  buffer->copyFrom(0, srcMemory.value(), size);
-  context->maybeAddContentLength(size);
+  context->overwriteRequestBody(srcMemory.value(), size);
+  // buffer->copyFrom(srcMemory.value(), size);
+  // context->maybeAddContentLength(size);
 }
 
 Word get_status_code() {

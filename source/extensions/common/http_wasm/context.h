@@ -10,6 +10,7 @@
 #include "envoy/buffer/buffer.h"
 #include "envoy/http/filter.h"
 #include "envoy/stats/sink.h"
+#include "source/common/buffer/buffer_impl.h"
 #include "envoy/upstream/cluster_manager.h"
 
 #include "source/common/common/assert.h"
@@ -34,27 +35,32 @@ using GuestConfigSharedPtr = std::shared_ptr<GuestConfig>;
 using GuestConfigHandleSharedPtr = std::shared_ptr<GuestConfigHandle>;
 using GuestHandleSharedPtr = std::shared_ptr<GuestHandle>;
 
-class Buffer {
+class WasmBuffer {
 public:
-  Buffer() = default;
+  WasmBuffer() = default;
 
   size_t size() const;
   int64_t copyTo(void* ptr, uint64_t size);
-  WasmResult copyFrom(size_t start, std::string_view data, size_t length);
+  WasmResult copyFrom(std::string_view data, size_t length);
 
   void clear() {
     const_buffer_instance_ = nullptr;
     buffer_instance_ = nullptr;
   }
-  Buffer* set(std::string_view data);
 
-  Buffer* set(::Envoy::Buffer::Instance* buffer_instance) {
+  WasmBuffer* set(::Envoy::Buffer::Instance* buffer_instance) {
     clear();
     buffer_instance_ = buffer_instance;
     const_buffer_instance_ = buffer_instance;
     return this;
   }
-  Buffer* set(const ::Envoy::Buffer::Instance* buffer_instance) {
+  WasmBuffer* set(Buffer::OwnedImpl* buffer_instance) {
+    clear();
+    buffer_instance_ = buffer_instance;
+    const_buffer_instance_ = buffer_instance;
+    return this;
+  }
+  WasmBuffer* set(const ::Envoy::Buffer::Instance* buffer_instance) {
     clear();
     const_buffer_instance_ = buffer_instance;
     return this;
@@ -72,8 +78,8 @@ class Context : public Logger::Loggable<Logger::Id::wasm>,
                 public Http::StreamFilter,
                 public std::enable_shared_from_this<Context> {
 public:
-  Context() = default;                                            // Testing.
-  Context(Guest* guest, GuestConfigSharedPtr& initialized_guest); // Root Context.
+  Context() = default; // Testing.
+  Context(Guest* guest, GuestConfigSharedPtr& initialized_guest);
 
   ~Context() override;
 
@@ -117,7 +123,7 @@ public:
   void setEncoderFilterCallbacks(Envoy::Http::StreamEncoderFilterCallbacks& callbacks) override;
 
   FilterHeadersStatus onRequestHeaders(uint32_t headers, bool end_of_stream);
-  FilterDataStatus onRequestBody(uint32_t body_length, bool end_of_stream);
+  FilterDataStatus onRequestBody();
   FilterTrailersStatus onRequestTrailers(uint32_t trailers);
   FilterMetadataStatus onRequestMetadata(uint32_t elements);
   FilterHeadersStatus onResponseHeaders(uint32_t headers, bool end_of_stream);
@@ -152,7 +158,7 @@ public:
   WasmResult getHeaderMapSize(WasmHeaderMapType type, uint32_t* size);
 
   // Buffer
-  Buffer* getBuffer(WasmBufferType type);
+  WasmBuffer* getBuffer(WasmBufferType type);
 
   uint64_t getCurrentTimeNanoseconds() {
     error("unimplemented wasi API");
@@ -163,12 +169,16 @@ public:
     return 0;
   }
 
+  void setBufferRequest() { guest_feature_set_ = guest_feature_set_ | 1; }
+  void setBufferResponse() { guest_feature_set_ = guest_feature_set_ | 2; }
+  uint8_t getGuestFeatureSet() { return guest_feature_set_; }
+  void overwriteRequestBody(std::string_view data, size_t length);
+
 protected:
   friend class Guest;
   Http::HeaderMap* getMap(WasmHeaderMapType type);
   const Http::HeaderMap* getConstMap(WasmHeaderMapType type);
 
-  // const LocalInfo::LocalInfo* root_local_info_{nullptr}; // set only for root_context.
   GuestConfigHandleSharedPtr guest_config_handle_{nullptr};
 
   // HTTP callbacks.
@@ -179,6 +189,7 @@ protected:
   Http::RequestHeaderMap* request_headers_{};
   Http::ResponseHeaderMap* response_headers_{};
   ::Envoy::Buffer::Instance* request_body_buffer_{};
+  Buffer::OwnedImpl request_buffer_;
   ::Envoy::Buffer::Instance* response_body_buffer_{};
   Http::RequestTrailerMap* request_trailers_{};
   Http::ResponseTrailerMap* response_trailers_{};
@@ -186,14 +197,12 @@ protected:
   Http::MetadataMap* response_metadata_{};
 
   // Temporary state.
-  Buffer buffer_;
-  bool buffering_request_body_ = false;
-  bool buffering_response_body_ = false;
+  WasmBuffer buffer_;
   bool end_of_stream_ = false;
 
   Guest* guest_{nullptr};
   uint32_t id_{0};
-  uint32_t parent_context_id_{0};             // 0 for roots and the general context.
+  uint32_t parent_context_id_{0};             // 0 for the guest context.
   Context* parent_context_{nullptr};          // set in all contexts.
   std::shared_ptr<GuestConfig> guest_config_; // set in stream contexts.
   bool in_vm_context_created_ = false;
@@ -201,12 +210,16 @@ protected:
   bool stream_failed_ = false; // Set true after failStream is called in case of VM failure.
 
 private:
+  uint8_t guest_feature_set_{0};
   std::string_view local_response_body_;
   uint32_t local_response_status_code_;
   Envoy::Http::ResponseHeaderMapPtr local_response_headers_;
   // helper functions
   FilterHeadersStatus convertVmCallResultToFilterHeadersStatus(uint64_t result);
   FilterDataStatus convertVmCallResultToFilterDataStatus(uint64_t result);
+
+  // request_context_ holds the context id received from the guest as return value of
+  // handle_request() call. It is used to identify the context in the callbacks from the guest.
   uint32_t request_context_{0};
 };
 using ContextSharedPtr = std::shared_ptr<Context>;

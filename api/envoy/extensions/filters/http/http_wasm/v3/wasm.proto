@@ -2,11 +2,14 @@ syntax = "proto3";
 
 package envoy.extensions.filters.http.http_wasm.v3;
 
+import "google/protobuf/wrappers.proto";
+
 import "envoy/config/core/v3/base.proto";
 
 import "google/protobuf/any.proto";
 
 import "udpa/annotations/status.proto";
+import "validate/validate.proto";
 
 option java_package = "io.envoyproxy.envoy.extensions.filters.http.http_wasm.v3";
 option java_outer_classname = "HttpWasmProto";
@@ -18,7 +21,7 @@ option (udpa.annotations.file_status).package_version_status = ACTIVE;
 // [#extension: envoy.filters.http.http_wasm]
 
 // Configuration for Wasm Guest modules e.g. http filters.
-// [#next-free-field: 6]
+// [#next-free-field: 7]
 message GuestConfig {
   // A unique name for the guest configuration.
   string name = 1;
@@ -43,6 +46,11 @@ message GuestConfig {
 
   // The Wasm code that Envoy will execute.
   config.core.v3.AsyncDataSource code = 5;
+
+  // The maximum request size that the filter will buffer before the connection
+  // manager will stop buffering and return a 413 response.
+  google.protobuf.UInt32Value max_request_bytes = 6
+      [(validate.rules).uint32 = {gt: 0}, (validate.rules).message = {required: true}];
 }
 
 // [#next-free-field: 3]

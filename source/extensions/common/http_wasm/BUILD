@@ -56,6 +56,7 @@ envoy_cc_library(
         "//envoy/server:filter_config_interface",
         "//envoy/server:lifecycle_notifier_interface",
         "//envoy/upstream:cluster_manager_interface",
+        "//source/common/buffer:buffer_lib",
         "@envoy_api//envoy/extensions/filters/http/http_wasm/v3:pkg_cc_proto",
     ],
 )
