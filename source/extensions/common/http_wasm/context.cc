@@ -455,7 +455,7 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
 
   if (!end_stream) {
     if (!(((this->getGuestFeatureSet() & 1) ||
-           (this->parent_context_ && !(this->parent_context_->getGuestFeatureSet() & 1))))) {
+           (this->guest_->contexts_[0]->getGuestFeatureSet() & 1)))) {
       ENVOY_LOG(info, "decodeData: guest has not enable request buffering. Skipping to send "
                       "request body in chunks");
       return Http::FilterDataStatus::Continue;
