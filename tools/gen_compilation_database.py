@@ -117,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument('--include_headers', action='store_true')
     parser.add_argument('--vscode', action='store_true')
     parser.add_argument('--include_all', action='store_true')
-    parser.add_argument('--exclude_contrib', action='store_false')
+    parser.add_argument('--exclude_contrib', action='store_true')
     parser.add_argument('--bazel', default='bazel')
     parser.add_argument(
         'bazel_targets', nargs='*', default=[
