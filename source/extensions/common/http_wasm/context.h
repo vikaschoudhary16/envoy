@@ -10,6 +10,7 @@
 #include "envoy/buffer/buffer.h"
 #include "envoy/http/filter.h"
 #include "envoy/stats/sink.h"
+#include "guest.h"
 #include "source/common/buffer/buffer_impl.h"
 #include "envoy/upstream/cluster_manager.h"
 
@@ -78,14 +79,11 @@ class Context : public Logger::Loggable<Logger::Id::wasm>,
                 public Http::StreamFilter,
                 public std::enable_shared_from_this<Context> {
 public:
-  Context() = default; // Testing.
-  Context(Guest* guest, GuestConfigSharedPtr& initialized_guest);
+  Context(std::shared_ptr<Guest> guest, GuestConfigSharedPtr& initialized_guest);
 
   ~Context() override;
 
-  Guest* guest() const { return guest_; }
-  uint32_t id() const { return id_; }
-  Context* parent_context() const { return parent_context_; }
+  Guest* guest() const { return guest_.get(); }
   Upstream::ClusterManager& clusterManager() const;
   void maybeAddContentLength(uint64_t content_length);
   Runtime* runtime() const;
@@ -191,12 +189,9 @@ protected:
   WasmBuffer buffer_;
   bool end_of_stream_ = false;
 
-  Guest* guest_{nullptr};
+  std::shared_ptr<Guest> guest_{nullptr};
   uint32_t id_{0};
-  uint32_t parent_context_id_{0};             // 0 for the guest context.
-  Context* parent_context_{nullptr};          // set in all contexts.
   std::shared_ptr<GuestConfig> guest_config_; // set in stream contexts.
-  bool in_vm_context_created_ = false;
   bool destroyed_ = false;
   bool stream_failed_ = false; // Set true after failStream is called in case of VM failure.
 

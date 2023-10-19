@@ -111,7 +111,7 @@ WasmResult WasmBuffer::copyFrom(std::string_view data, size_t length) {
   return WasmResult::Ok;
 }
 
-Context::Context(Guest* guest, GuestConfigSharedPtr& guest_config)
+Context::Context(std::shared_ptr<Guest> guest, GuestConfigSharedPtr& guest_config)
     : guest_(guest), id_(guest != nullptr ? guest->allocContextId() : 0),
       guest_config_(guest_config) {
   if (guest_ != nullptr) {
@@ -365,7 +365,7 @@ Http::FilterDataStatus convertFilterDataStatus(FilterDataStatus status) {
 };
 
 void Context::onDestroy() {
-  if (destroyed_ || !in_vm_context_created_) {
+  if (destroyed_) {
     return;
   }
   destroyed_ = true;
@@ -428,7 +428,6 @@ void Context::setLocalResponseCode(uint32_t response_code) {
 void Context::setLocalResponseBody(std::string_view body) { local_response_body_ = body; }
 
 Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers, bool end_stream) {
-  in_vm_context_created_ = true;
   request_headers_ = &headers;
 
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
@@ -448,9 +447,6 @@ Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers
 
 Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool end_stream) {
   ENVOY_LOG(warn, " decodeData: endStream: {}", end_stream);
-  if (!in_vm_context_created_) {
-    return Http::FilterDataStatus::Continue;
-  }
 
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
   clearLocalResponse();
@@ -479,9 +475,7 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
 }
 
 Http::FilterTrailersStatus Context::decodeTrailers(Http::RequestTrailerMap& trailers) {
-  if (!in_vm_context_created_) {
-    return Http::FilterTrailersStatus::Continue;
-  }
+
   request_trailers_ = &trailers;
   auto result = convertFilterTrailersStatus(onRequestTrailers(headerSize(&trailers)));
   if (result == Http::FilterTrailersStatus::Continue) {
@@ -491,9 +485,7 @@ Http::FilterTrailersStatus Context::decodeTrailers(Http::RequestTrailerMap& trai
 }
 
 Http::FilterMetadataStatus Context::decodeMetadata(Http::MetadataMap& request_metadata) {
-  if (!in_vm_context_created_) {
-    return Http::FilterMetadataStatus::Continue;
-  }
+
   request_metadata_ = &request_metadata;
   auto result = convertFilterMetadataStatus(onRequestMetadata(headerSize(&request_metadata)));
   if (result == Http::FilterMetadataStatus::Continue) {
@@ -525,9 +517,6 @@ Http::FilterHeadersStatus Context::encodeHeaders(Http::ResponseHeaderMap& header
         });
   }
 
-  if (!in_vm_context_created_) {
-    return Http::FilterHeadersStatus::Continue;
-  }
   if (!end_stream) {
     // If this is not a header-only response, we will handle response in encodeData.
     return Http::FilterHeadersStatus::StopIteration;
@@ -540,9 +529,7 @@ Http::FilterHeadersStatus Context::encodeHeaders(Http::ResponseHeaderMap& header
 
 Http::FilterDataStatus Context::encodeData(::Envoy::Buffer::Instance& data, bool end_stream) {
   ENVOY_LOG(debug, "encodeData: endStream: {}", end_stream);
-  if (!in_vm_context_created_) {
-    return Http::FilterDataStatus::Continue;
-  }
+
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpResponseBody);
   response_body_buffer_ = &data;
   end_of_stream_ = end_stream;
@@ -553,9 +540,7 @@ Http::FilterDataStatus Context::encodeData(::Envoy::Buffer::Instance& data, bool
 }
 
 Http::FilterTrailersStatus Context::encodeTrailers(Http::ResponseTrailerMap& trailers) {
-  if (!in_vm_context_created_) {
-    return Http::FilterTrailersStatus::Continue;
-  }
+
   response_trailers_ = &trailers;
   auto result = convertFilterTrailersStatus(onResponseTrailers(headerSize(&trailers)));
   if (result == Http::FilterTrailersStatus::Continue) {
@@ -565,9 +550,7 @@ Http::FilterTrailersStatus Context::encodeTrailers(Http::ResponseTrailerMap& tra
 }
 
 Http::FilterMetadataStatus Context::encodeMetadata(Http::MetadataMap& response_metadata) {
-  if (!in_vm_context_created_) {
-    return Http::FilterMetadataStatus::Continue;
-  }
+
   response_metadata_ = &response_metadata;
   auto result = convertFilterMetadataStatus(onResponseMetadata(headerSize(&response_metadata)));
   if (result == Http::FilterMetadataStatus::Continue) {

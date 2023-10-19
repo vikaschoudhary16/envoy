@@ -83,7 +83,6 @@ protected:
   TimeSource& time_source_;
 
   std::unique_ptr<Runtime> runtime_;
-  std::optional<Cloneable> started_from_;
 
   uint32_t next_context_id_ = 0;
   std::unique_ptr<Context> guest_config_context_; // Guest context
@@ -101,8 +100,6 @@ protected:
   // Calls into the VM.
   WasmCallI64<0> handle_request_;   // http-wasm
   WasmCallVoid<2> handle_response_; // http-wasm
-
-#define FOR_ALL_MODULE_FUNCTIONS(_f) _f(handle_request) _f(handle_response)
 
   std::shared_ptr<Guest> parent_guest_;
 

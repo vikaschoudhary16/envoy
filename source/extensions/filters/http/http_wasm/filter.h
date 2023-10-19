@@ -22,7 +22,6 @@ public:
                Server::Configuration::FactoryContext& context);
 
   std::shared_ptr<Context> createFilter() {
-    Guest* guest = nullptr;
     if (!tls_slot_->currentThreadRegistered()) {
       return nullptr;
     }
@@ -30,10 +29,7 @@ public:
     if (!mapping) {
       return nullptr;
     }
-    if (mapping->guest()) {
-      guest = mapping->guest().get();
-    }
-    if (!guest || guest->isFailed()) {
+    if (!mapping->guest() || mapping->guest()->isFailed()) {
       if (mapping->guestConfig()->fail_open_) {
         return nullptr; // Fail open skips adding this filter to callbacks.
       } else {
@@ -42,7 +38,7 @@ public:
             mapping->guestConfig()); // Fail closed is handled by an empty Context.
       }
     }
-    return std::make_shared<Context>(guest, mapping->guestConfig());
+    return std::make_shared<Context>(mapping->guest(), mapping->guestConfig());
   }
 
 private:

@@ -128,41 +128,23 @@ void Guest::registerCallbacks() {
 }
 
 void Guest::getFunctions() {
-#define _GET(_fn) runtime_->getFunction(#_fn, &_fn##_);
-#define _GET_ALIAS(_fn, _alias) runtime_->getFunction(#_alias, &_fn##_);
-  _GET(_initialize);
+  runtime_->getFunction("_initialize", &_initialize_);
   if (_initialize_) {
-    _GET(main);
+    runtime_->getFunction("main", &main_);
   } else {
-    _GET(_start);
+    runtime_->getFunction("_start", &_start_);
   }
-#undef _GET_ALIAS
-#undef _GET
-
-  // Try to point the capability to one of the module exports
-#define _GET_PROXY(_fn) runtime_->getFunction(#_fn, &_fn##_);
-
-  FOR_ALL_MODULE_FUNCTIONS(_GET_PROXY);
-
-#undef _GET_PROXY
+  runtime_->getFunction("handle_request", &handle_request_);
+  runtime_->getFunction("handle_response", &handle_response_);
 }
 
 Context* Guest::createContext(std::shared_ptr<GuestConfig>& guest_config) {
-  return new Context(this, guest_config);
+  return new Context(this->sharedThis(), guest_config);
 }
 
 bool Guest::load(const std::string& code) {
-  assert(!started_from_.has_value());
-
   if (!runtime_) {
     return false;
-  }
-
-  // Verify signature.
-  std::string message;
-
-  if (!message.empty()) {
-    runtime_->logger()->debug(message);
   }
 
   // Get function names from the module.
@@ -192,17 +174,12 @@ bool Guest::initializeAndStart(Context* guest_config_context) {
     return false;
   }
 
-  if (started_from_ != Cloneable::InstantiatedModule) {
-    registerCallbacks();
-    if (!runtime_->link("")) {
-      return false;
-    }
+  registerCallbacks();
+  if (!runtime_->link("")) {
+    return false;
   }
   getFunctions();
-  if (started_from_ != Cloneable::InstantiatedModule) {
-    // Base VM was already started, so don't try to start cloned VMs again.
-    start(guest_config_context);
-  }
+  start(guest_config_context);
 
   return !isFailed();
 }
