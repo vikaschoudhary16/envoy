@@ -355,15 +355,16 @@ docutils==0.19 \
     #   -r requirements.in
     #   envoy-docs-sphinx-runner
     #   sphinx
+    #   sphinx-rtd-theme
 envoy-base-utils==0.4.11 \
     --hash=sha256:5ced696c470b4c3090e6fc3f74e7e33f5fe217e775b1fc1fb56dfc756b781fbe \
     --hash=sha256:97c79177bb89360b7772e58fb20c671c67bf0b6cdee74c0b9f8a80433f0370cc
     # via
     #   -r requirements.in
     #   envoy-docs-sphinx-runner
-envoy-docs-sphinx-runner==0.2.6 \
-    --hash=sha256:045b23f182d9760df693e0c01f6bd0654d0c5690107945e262ce720a976920b7 \
-    --hash=sha256:8166ff4b1b265efaf73db397d7ad0a1a743d71281ec233885c692c24f9349bd1
+envoy-docs-sphinx-runner==0.2.9 \
+    --hash=sha256:1fa789b1d29ea929df67b07e5ca910d62e2057cd229719725030889da53b1a09 \
+    --hash=sha256:4bfa1946104e263471d522b47d683e127124a5ad47334d69de4aea0eac282576
     # via -r requirements.in
 frozendict==2.3.8 \
     --hash=sha256:0bc4767e2f83db5b701c787e22380296977368b0c57e485ca71b2eedfa11c4a3 \
@@ -815,6 +816,7 @@ sphinx==7.1.2 \
     #   -r requirements.in
     #   envoy-docs-sphinx-runner
     #   sphinx-copybutton
+    #   sphinx-rtd-theme
     #   sphinxcontrib-googleanalytics
     #   sphinxcontrib-httpdomain
     #   sphinxcontrib-jquery
@@ -825,6 +827,10 @@ sphinx-copybutton==0.5.2 \
     # via
     #   -r requirements.in
     #   envoy-docs-sphinx-runner
+sphinx-rtd-theme==2.0.0rc2 \
+    --hash=sha256:d1270effe620df9164b1cd2d617909472a63531e21a716fd22d0fbcedf9d24ff \
+    --hash=sha256:f04df9213acf421c3b42f4f39005c8bc68fc4696c5b4ed4ef13d1678369713f7
+    # via envoy-docs-sphinx-runner
 sphinxcontrib-applehelp==1.0.4 \
     --hash=sha256:29d341f67fb0f6f586b23ad80e072c8e6ad0b48417db2bde114a4c9746feb228 \
     --hash=sha256:828f867945bbe39817c210a1abfd1bc4895c8b73fcaade56d45357a348a07d7e
@@ -859,6 +865,7 @@ sphinxcontrib-jquery==4.1 \
     # via
     #   -r requirements.in
     #   envoy-docs-sphinx-runner
+    #   sphinx-rtd-theme
 sphinxcontrib-jsmath==1.0.1 \
     --hash=sha256:2ec2eaebfb78f3f2078e73666b1415417a116cc848b72e5172e596c871103178 \
     --hash=sha256:a9925e4a4587247ed2191a22df5f6970656cb8ca2bd6284309578f2153e0c4b8
