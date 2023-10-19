@@ -47,8 +47,8 @@ message GuestConfig {
   // The Wasm code that Envoy will execute.
   config.core.v3.AsyncDataSource code = 5;
 
-  // The maximum request size that the filter will buffer before the connection
-  // manager will stop buffering and return a 413 response.
+  // The maximum request size that the filter will buffer before the envoy
+  // will stop buffering and return a 413 response.
   google.protobuf.UInt32Value max_request_bytes = 6
       [(validate.rules).uint32 = {gt: 0}, (validate.rules).message = {required: true}];
 }

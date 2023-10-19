@@ -191,15 +191,6 @@ bool Guest::initializeAndStart(Context* guest_config_context) {
   if (!runtime_) {
     return false;
   }
-  // TODO(vikas): I think we can remove this whole Cloneable thing.
-  if (started_from_ == Cloneable::NotCloneable) {
-    auto ok = runtime_->load(parent_guest_->moduleBytecode(),
-                             /*modulePrecompiled*/ "", parent_guest_->functionNames());
-    if (!ok) {
-      fail(FailState::UnableToInitializeCode, "Failed to load Guest module from base Guest");
-      return false;
-    }
-  }
 
   if (started_from_ != Cloneable::InstantiatedModule) {
     registerCallbacks();

@@ -119,6 +119,18 @@ Context::Context(Guest* guest, GuestConfigSharedPtr& guest_config)
   }
 }
 
+uint64_t Context::getCurrentTimeNanoseconds() {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             guest()->time_source_.systemTime().time_since_epoch())
+      .count();
+}
+
+uint64_t Context::getMonotonicTimeNanoseconds() {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             guest()->time_source_.monotonicTime().time_since_epoch())
+      .count();
+}
+
 void Context::overwriteRequestBody(std::string_view data, size_t length) {
   decoder_callbacks_->modifyDecodingBuffer([data](Buffer::Instance& dec_buf) {
     Buffer::OwnedImpl new_buf;
@@ -283,29 +295,19 @@ WasmBuffer* Context::getBuffer(WasmBufferType type) {
   }
 }
 
-// StreamInfo
-const StreamInfo::StreamInfo* Context::getConstRequestStreamInfo() const {
-  if (encoder_callbacks_) {
-    return &encoder_callbacks_->streamInfo();
-  } else if (decoder_callbacks_) {
-    return &decoder_callbacks_->streamInfo();
-  }
-  return nullptr;
-}
-
 WasmResult Context::log(int32_t level, std::string_view message) {
   switch (static_cast<LogLevel>(level)) {
   case LogLevel::debug:
-    ENVOY_LOG(debug, "httpwasm log{}: {}", log_prefix(), message);
+    ENVOY_LOG(debug, "httpwasm: {}", message);
     return WasmResult::Ok;
   case LogLevel::info:
-    ENVOY_LOG(info, "httpwasm log{}: {}", log_prefix(), message);
+    ENVOY_LOG(info, "httpwasm: {}", message);
     return WasmResult::Ok;
   case LogLevel::warn:
-    ENVOY_LOG(warn, "wasm log{}: {}", log_prefix(), message);
+    ENVOY_LOG(warn, "httpwasm: {}", message);
     return WasmResult::Ok;
   case LogLevel::error:
-    ENVOY_LOG(error, "wasm log{}: {}", log_prefix(), message);
+    ENVOY_LOG(error, "httpwasm: {}", message);
     return WasmResult::Ok;
   case LogLevel::none:
     return WasmResult::Ok;

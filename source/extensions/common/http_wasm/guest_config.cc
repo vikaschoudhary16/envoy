@@ -11,8 +11,7 @@ namespace HttpWasm {
 GuestConfig::GuestConfig(const envoy::extensions::filters::http::http_wasm::v3::GuestConfig& config)
     : name_(std::string(config.name())),
       configuration_(MessageUtil::anyToBytes(config.configuration())),
-      fail_open_(config.fail_open()), config_(config), key_(name_ + "||" + configuration_),
-      log_prefix_(makeLogPrefix()) {
+      fail_open_(config.fail_open()), config_(config), key_(name_ + "||" + configuration_) {
   if (config.has_environment_variables()) {
     const auto& envs = config_.environment_variables();
 
@@ -41,14 +40,6 @@ GuestConfig::GuestConfig(const envoy::extensions::filters::http::http_wasm::v3::
       }
     }
   }
-}
-
-std::string GuestConfig::makeLogPrefix() const {
-  std::string prefix;
-  if (!name_.empty()) {
-    prefix = prefix + " " + name_;
-  }
-  return prefix;
 }
 
 } // namespace HttpWasm

@@ -59,8 +59,6 @@ public:
   const std::string& moduleBytecode() const { return module_bytecode_; }
   const std::unordered_map<uint32_t, std::string> functionNames() const { return function_names_; }
 
-  WasmResult done(Context* guest_context);
-
   // Proxy specific extension points.
   //
   void registerCallbacks(); // Register functions called out from guest.
@@ -73,8 +71,6 @@ public:
     failed_ = fail_state;
   }
   void error(std::string_view message);
-  virtual void unimplemented() { error("unimplemented http-wasm API"); }
-
   const std::unordered_map<std::string, std::string>& envs() { return envs_; }
 
 protected:

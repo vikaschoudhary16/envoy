@@ -86,7 +86,6 @@ public:
   Guest* guest() const { return guest_; }
   uint32_t id() const { return id_; }
   Context* parent_context() const { return parent_context_; }
-  std::string_view log_prefix() const { return guest_config_->log_prefix(); }
   Upstream::ClusterManager& clusterManager() const;
   void maybeAddContentLength(uint64_t content_length);
   Runtime* runtime() const;
@@ -98,8 +97,6 @@ public:
   // callback, log callback, network read filter callback, network write filter
   // callback. As long as any one of the callbacks is invoked, the value should be
   // available.
-  const StreamInfo::StreamInfo* getConstRequestStreamInfo() const;
-  StreamInfo::StreamInfo* getRequestStreamInfo() const;
 
   uint32_t getLogLevel();
 
@@ -160,17 +157,11 @@ public:
   // Buffer
   WasmBuffer* getBuffer(WasmBufferType type);
 
-  uint64_t getCurrentTimeNanoseconds() {
-    error("unimplemented wasi API");
-    return 0;
-  }
-  uint64_t getMonotonicTimeNanoseconds() {
-    error("unimplemented wasi API");
-    return 0;
-  }
+  uint64_t getCurrentTimeNanoseconds();
+  uint64_t getMonotonicTimeNanoseconds();
 
-  void setBufferRequest() { guest_feature_set_ = guest_feature_set_ | 1; }
-  void setBufferResponse() { guest_feature_set_ = guest_feature_set_ | 2; }
+  void setFeatureBufferRequest() { guest_feature_set_ = guest_feature_set_ | 0b1; }
+  void setFeatureBufferResponse() { guest_feature_set_ = guest_feature_set_ | 0b10; }
   uint8_t getGuestFeatureSet() { return guest_feature_set_; }
   void overwriteRequestBody(std::string_view data, size_t length);
 

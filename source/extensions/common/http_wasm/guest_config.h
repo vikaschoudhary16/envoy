@@ -26,15 +26,12 @@ public:
   std::string name_;
   bool fail_open_;
   std::string configuration_;
-  std::string& log_prefix() { return log_prefix_; }
   const std::string& key() const { return key_; }
 
 private:
   envoy::extensions::filters::http::http_wasm::v3::GuestConfig config_;
   EnvironmentVariableMap envs_;
   const std::string key_;
-  std::string log_prefix_;
-  std::string makeLogPrefix() const;
 };
 
 using GuestConfigPtr = std::unique_ptr<GuestConfig>;

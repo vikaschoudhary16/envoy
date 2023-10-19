@@ -36,10 +36,10 @@ Word get_config(Word value_ptr, Word value_size) {
 Word enable_features(Word features) {
   auto* context = contextOrEffectiveContext();
   if (features & 1 && context) {
-    context->setBufferRequest();
+    context->setFeatureBufferRequest();
   }
   if (features & 2 && context) {
-    context->setBufferResponse();
+    context->setFeatureBufferResponse();
     return 3;
   }
   return context->getGuestFeatureSet();
