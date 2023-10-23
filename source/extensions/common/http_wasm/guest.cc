@@ -312,6 +312,7 @@ getOrCreateThreadLocalInitializedGuest(const GuestSharedPtr& guest,
       local_guest_configs.erase(key);
     };
   });
+  removeStaleLocalCacheEntries();
   return mapping;
 }
 
@@ -334,6 +335,17 @@ static std::shared_ptr<Guest> cloneGuest(const std::shared_ptr<Guest>& guest,
     };
   });
   return guest_clone;
+}
+
+void removeStaleLocalCacheEntries() {
+  // iterate over the cache and remove any expired entries
+  for (auto it = local_guest_configs.begin(); it != local_guest_configs.end();) {
+    if (it->second.expired()) {
+      it = local_guest_configs.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 } // namespace HttpWasm

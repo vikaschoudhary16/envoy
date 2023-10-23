@@ -163,6 +163,7 @@ getOrCreateThreadLocalInitializedGuest(const GuestSharedPtr& guest,
 template <typename T> inline bool Guest::setDatatype(uint64_t ptr, const T& t) {
   return runtime_->setMemory(ptr, sizeof(T), &t);
 }
+void removeStaleLocalCacheEntries();
 
 } // namespace HttpWasm
 } // namespace HttpFilters
