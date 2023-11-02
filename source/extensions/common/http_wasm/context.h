@@ -83,7 +83,12 @@ public:
 
   ~Context() override;
 
-  Guest* guest() const { return guest_.get(); }
+  Guest* guest() const {
+    if (auto guest = guest_.lock()) {
+      return guest.get();
+    }
+    return nullptr;
+  }
   Upstream::ClusterManager& clusterManager() const;
   void maybeAddContentLength(uint64_t content_length);
   Runtime* runtime() const;
@@ -129,7 +134,8 @@ public:
   bool isFailed();
 
   // General
-  WasmResult log(int32_t level, std::string_view message);
+  // virtual log
+  virtual WasmResult log(int32_t level, std::string_view message);
   std::string_view getConfiguration();
   void sendLocalResponse(WasmBufferType);
   void setLocalResponseCode(uint32_t);
@@ -189,7 +195,7 @@ protected:
   WasmBuffer buffer_;
   bool end_of_stream_ = false;
 
-  std::shared_ptr<Guest> guest_{nullptr};
+  std::weak_ptr<Guest> guest_;
   uint32_t id_{0};
   std::shared_ptr<GuestConfig> guest_config_; // set in stream contexts.
   bool destroyed_ = false;

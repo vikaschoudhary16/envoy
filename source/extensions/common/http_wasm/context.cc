@@ -114,8 +114,8 @@ WasmResult WasmBuffer::copyFrom(std::string_view data, size_t length) {
 Context::Context(std::shared_ptr<Guest> guest, GuestConfigSharedPtr& guest_config)
     : guest_(guest), id_(guest != nullptr ? guest->allocContextId() : 0),
       guest_config_(guest_config) {
-  if (guest_ != nullptr) {
-    guest_->contexts_[id_] = this;
+  if (guest != nullptr) {
+    guest->contexts_[id_] = this;
   }
 }
 
@@ -142,9 +142,14 @@ void Context::overwriteRequestBody(std::string_view data, size_t length) {
   request_headers_->setContentLength(length);
 }
 
-bool Context::isFailed() { return (guest_ == nullptr || guest_->isFailed()); }
+bool Context::isFailed() { return (guest() == nullptr || guest_.lock()->isFailed()); }
 
-Runtime* Context::runtime() const { return guest_->runtime(); }
+Runtime* Context::runtime() const {
+  if (auto guest = guest_.lock()) {
+    return guest->runtime();
+  }
+  return nullptr;
+}
 
 void Context::error(std::string_view message) { ENVOY_LOG(trace, message); }
 
@@ -429,6 +434,13 @@ void Context::setLocalResponseBody(std::string_view body) { local_response_body_
 
 Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers, bool end_stream) {
   request_headers_ = &headers;
+  ENVOY_LOG(
+      warn,
+      " decodeHeaders::::::::::::::::::::::::::::::::::::::::::::::::::::::::::: remoteaddress: {}",
+      decoder_callbacks_->streamInfo()
+          .downstreamAddressProvider()
+          .directRemoteAddress()
+          ->asString());
 
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
   clearLocalResponse();
@@ -453,7 +465,7 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
 
   if (!end_stream) {
     if (!(((this->getGuestFeatureSet() & 1) ||
-           (this->guest_->contexts_[0]->getGuestFeatureSet() & 1)))) {
+           (this->guest()->contexts_[0]->getGuestFeatureSet() & 1)))) {
       ENVOY_LOG(info, "decodeData: guest has not enable request buffering. Skipping to send "
                       "request body in chunks");
       return Http::FilterDataStatus::Continue;
@@ -579,14 +591,14 @@ FilterDataStatus Context::convertVmCallResultToFilterDataStatus(uint64_t result)
 
 Context::~Context() {
   // Do not remove vm context which has the same lifetime as guest_.
-  if (id_ != 0U) {
-    guest_->contexts_.erase(id_);
+  if (id_ != 0U && guest_.expired()) {
+    guest_.lock()->contexts_.erase(id_);
   }
 }
 
 FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopIteration);
-  const auto result = guest_->handle_request_(this);
+  const auto result = guest()->handle_request_(this);
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopIteration);
   request_context_ = uint32_t(result >> 32);
   uint32_t next = uint32_t(result);
@@ -596,7 +608,7 @@ FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stre
 
 FilterDataStatus Context::onRequestBody() {
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIteration);
-  const auto result = guest_->handle_request_(this);
+  const auto result = guest()->handle_request_(this);
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIteration);
   request_context_ = uint32_t(result >> 32);
   uint32_t next = uint32_t(result);
@@ -616,13 +628,13 @@ FilterMetadataStatus Context::onRequestMetadata(uint32_t elements) {
 FilterHeadersStatus Context::onResponseHeaders(uint32_t headers, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopIteration);
   ENVOY_LOG(debug, "onResponseHeaders: {} ", request_context_);
-  guest_->handle_response_(this, request_context_, 0);
+  guest()->handle_response_(this, request_context_, 0);
   return FilterHeadersStatus::Continue;
 }
 
 FilterDataStatus Context::onResponseBody(uint32_t body_length, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterDataStatus::Continue, FilterDataStatus::StopIteration);
-  guest_->handle_response_(this, request_context_, 0);
+  guest()->handle_response_(this, request_context_, 0);
   return FilterDataStatus::Continue;
 }
 

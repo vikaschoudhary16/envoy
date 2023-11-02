@@ -72,6 +72,9 @@ public:
   }
   void error(std::string_view message);
   const std::unordered_map<std::string, std::string>& envs() { return envs_; }
+  // const std::unordered_map<std::string, std::string>& envs() {
+  //   return guest_config_context_->guest_config_->environmentVariables();
+  // }
 
 protected:
   friend class Context;

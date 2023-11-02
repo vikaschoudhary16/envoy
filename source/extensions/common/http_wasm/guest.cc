@@ -160,7 +160,7 @@ bool Guest::load(const std::string& code) {
     return false;
   }
 
-  auto ok = runtime_->load(stripped, "" /*precompiled*/, function_names_);
+  auto ok = runtime_->load(stripped, "" /*no precompiled*/, function_names_);
   if (!ok) {
     fail(FailState::UnableToInitializeCode, "Failed to load Guest bytecode");
     return false;
@@ -341,6 +341,7 @@ void removeStaleLocalCacheEntries() {
   // iterate over the cache and remove any expired entries
   for (auto it = local_guest_configs.begin(); it != local_guest_configs.end();) {
     if (it->second.expired()) {
+      it->second.reset();
       it = local_guest_configs.erase(it);
     } else {
       ++it;
