@@ -112,8 +112,17 @@ WasmResult WasmBuffer::copyFrom(std::string_view data, size_t length) {
 }
 
 Context::Context(std::shared_ptr<Guest> guest, GuestConfigSharedPtr& guest_config)
+    : guest_shared_(guest), id_(guest != nullptr ? guest->allocContextId() : 0),
+      guest_config_(guest_config) {
+  ASSERT(id_ != 0);
+  if (guest != nullptr) {
+    guest->contexts_[id_] = this;
+  }
+}
+Context::Context(Guest* guest, GuestConfigSharedPtr& guest_config)
     : guest_(guest), id_(guest != nullptr ? guest->allocContextId() : 0),
       guest_config_(guest_config) {
+  ASSERT(id_ == 0);
   if (guest != nullptr) {
     guest->contexts_[id_] = this;
   }
@@ -142,11 +151,11 @@ void Context::overwriteRequestBody(std::string_view data, size_t length) {
   request_headers_->setContentLength(length);
 }
 
-bool Context::isFailed() { return (guest() == nullptr || guest_.lock()->isFailed()); }
+bool Context::isFailed() { return (guest() == nullptr || guest()->isFailed()); }
 
 Runtime* Context::runtime() const {
-  if (auto guest = guest_.lock()) {
-    return guest->runtime();
+  if (guest() != nullptr) {
+    return guest()->runtime();
   }
   return nullptr;
 }
@@ -336,7 +345,6 @@ Http::FilterHeadersStatus convertFilterHeadersStatus(FilterHeadersStatus status)
   case FilterHeadersStatus::Continue:
     return Http::FilterHeadersStatus::Continue;
   case FilterHeadersStatus::StopIteration:
-    // return Http::FilterHeadersStatus::StopIteration;
     return Http::FilterHeadersStatus::StopAllIterationAndWatermark;
   }
 };
@@ -434,13 +442,6 @@ void Context::setLocalResponseBody(std::string_view body) { local_response_body_
 
 Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers, bool end_stream) {
   request_headers_ = &headers;
-  ENVOY_LOG(
-      warn,
-      " decodeHeaders::::::::::::::::::::::::::::::::::::::::::::::::::::::::::: remoteaddress: {}",
-      decoder_callbacks_->streamInfo()
-          .downstreamAddressProvider()
-          .directRemoteAddress()
-          ->asString());
 
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
   clearLocalResponse();
@@ -589,12 +590,7 @@ FilterDataStatus Context::convertVmCallResultToFilterDataStatus(uint64_t result)
   return static_cast<FilterDataStatus>(result);
 }
 
-Context::~Context() {
-  // Do not remove vm context which has the same lifetime as guest_.
-  if (id_ != 0U && guest_.expired()) {
-    guest_.lock()->contexts_.erase(id_);
-  }
-}
+Context::~Context() {}
 
 FilterHeadersStatus Context::onRequestHeaders(uint32_t headers, bool end_of_stream) {
   CHECK_FAIL_HTTP(FilterHeadersStatus::Continue, FilterHeadersStatus::StopIteration);

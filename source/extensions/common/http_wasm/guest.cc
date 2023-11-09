@@ -139,7 +139,7 @@ void Guest::getFunctions() {
 }
 
 Context* Guest::createContext(std::shared_ptr<GuestConfig>& guest_config) {
-  return new Context(this->sharedThis(), guest_config);
+  return new Context(this, guest_config);
 }
 
 bool Guest::load(const std::string& code) {

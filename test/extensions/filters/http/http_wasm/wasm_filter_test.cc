@@ -50,17 +50,27 @@ public:
 
   TestFilter& filter() { return *static_cast<TestFilter*>(context_.get()); }
 
-  void setupGuest() {
+  void setup() {
     Api::ApiPtr api = Api::createApiForTest(*store_);
     envoy::extensions::filters::http::http_wasm::v3::GuestConfig guest_config;
+    const std::string yaml = TestEnvironment::substitute(absl::StrCat(R"EOF(
+    max_request_bytes: 5242880
+    configuration:
+       "@type": "type.googleapis.com/google.protobuf.StringValue"
+       value: "some configuration"
+    code:
+      local:
+        filename: "{{ test_rundir }}/test/extensions/filters/http/http_wasm/test_data/req-header/envoy-tests.wasm"
+    )EOF"));
 
-    guest_config.mutable_code()->mutable_local()->set_filename(
-        "test/extensions/filters/http/http_wasm/test_data/req-header/envoy-tests.wasm");
+    TestUtility::loadFromYaml(yaml, guest_config);
     guest_config_ = std::make_shared<GuestConfig>(guest_config);
     auto tlsSlotRegistrationCallback = [this](const GuestSharedPtr& loaded_guest_code) {
       guest_and_guest_config_ =
           (getOrCreateThreadLocalInitializedGuest(loaded_guest_code, guest_config_, dispatcher_));
-      guest_ = guest_and_guest_config_->guest();
+      context_ = std::make_unique<TestFilter>(guest_and_guest_config_->guest(), guest_config_);
+      context_->setDecoderFilterCallbacks(decoder_callbacks_);
+      context_->setEncoderFilterCallbacks(encoder_callbacks_);
     };
     loadGuestAndSetTlsSlot(guest_config_, scope_, dispatcher_, *api, lifecycle_notifier_,
                            std::move(tlsSlotRegistrationCallback));
@@ -94,8 +104,7 @@ TEST_F(WasmHttpFilterTest, HeadersOnlyRequestHeadersOnlyWithEnvVars) {
   const std::string env_value = "bar";
   TestEnvironment::setEnvVar(host_env_key, host_env_value, 0);
   envs[host_env_key.c_str()] = env_value;
-  setupGuest();
-  setupFilter();
+  setup();
   EXPECT_CALL(encoder_callbacks_, streamInfo()).WillRepeatedly(ReturnRef(request_stream_info_));
 
   NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;

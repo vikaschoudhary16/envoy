@@ -80,15 +80,17 @@ class Context : public Logger::Loggable<Logger::Id::wasm>,
                 public std::enable_shared_from_this<Context> {
 public:
   Context(std::shared_ptr<Guest> guest, GuestConfigSharedPtr& initialized_guest);
+  Context(Guest* guest, GuestConfigSharedPtr& initialized_guest);
 
   ~Context() override;
 
   Guest* guest() const {
-    if (auto guest = guest_.lock()) {
-      return guest.get();
+    if (guest_ != nullptr) {
+      return guest_;
     }
-    return nullptr;
+    return guest_shared_.get();
   }
+
   Upstream::ClusterManager& clusterManager() const;
   void maybeAddContentLength(uint64_t content_length);
   Runtime* runtime() const;
@@ -195,7 +197,8 @@ protected:
   WasmBuffer buffer_;
   bool end_of_stream_ = false;
 
-  std::weak_ptr<Guest> guest_;
+  Guest* guest_ = nullptr;
+  std::shared_ptr<Guest> guest_shared_ = nullptr;
   uint32_t id_{0};
   std::shared_ptr<GuestConfig> guest_config_; // set in stream contexts.
   bool destroyed_ = false;
