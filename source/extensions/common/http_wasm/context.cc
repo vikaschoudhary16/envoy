@@ -463,7 +463,7 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
 
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
   clearLocalResponse();
-
+  end_of_stream_ = end_stream;
   if (!end_stream) {
     if (!(((this->getGuestFeatureSet() & 1) ||
            (this->guest()->contexts_[0]->getGuestFeatureSet() & 1)))) {

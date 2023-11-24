@@ -19,6 +19,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 
 	//"github.com/tidwall/gjson"
@@ -39,7 +40,7 @@ func main() {
 	// 	panic("unexpected features, want: " + want.String() + ", have: " + have.String())
 	// }
 	//_ = handler.Host.GetConfig()
-	handler.HandleRequestFn = setHeader
+	handler.HandleRequestFn = handleRequest
 	//handler.HandleResponseFn = HandleResponse
 }
 
@@ -47,39 +48,60 @@ func main() {
 var contextID int
 var headerRcvd bool
 
-// setHeader has similar logic to proxywasm for fair comparisons.
-func setHeader(req api.Request, resp api.Response) (next bool, reqCtx uint32) {
+func handleRequest(req api.Request, resp api.Response) (next bool, reqCtx uint32) {
 	contextID++
 	//contextID = 5555
+	testID, _ := req.Headers().Get("testid")
+	if len(testID) == 0 {
+		resp.SetStatusCode(500)
+		resp.Body().WriteString("missing testid header")
+		return false, 0
+	}
 
-	if headerRcvd {
-		headerRcvd = false
-		readBody(req, resp)
-		writeBody(req, resp)
+	switch testID {
+	case "headers only with env vars":
+		var msg string
+		value := os.Getenv("ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV")
+		if value != "" {
+			msg += "ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV: " + value
+		}
+		value = os.Getenv("ENVOY_HTTP_WASM_TEST_HEADERS_KEY_VALUE_ENV")
 
+		if value != "" {
+			msg += "\nENVOY_HTTP_WASM_TEST_HEADERS_KEY_VALUE_ENV: " + value
+		}
+		handler.Host.Log(api.LogLevelInfo, "envs: "+msg)
+		if headerRcvd {
+			headerRcvd = false
+			readBody(req, resp)
+			writeBody(req, resp)
+
+			next = true
+			return
+		}
+		headerRcvd = true
+
+		req.Headers().Set("Wasm-Context", strconv.Itoa(contextID))
+		req.Headers().Set("newheader", "newheadervalue")
+		req.Headers().Set("server", "envoy-httpwasm")
+		//names := req.Headers().Names()
+
+		//handler.Host.Log(api.LogLevelInfo, "handle_request header-names:: "+fmt.Sprintf("%v", names))
+		requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
+		if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
+			panic("unexpected features, want: " + want.String() + ", have: " + have.String())
+		}
+
+		//handler.Host.Log(api.LogLevelInfo, string(handler.Host.GetConfig()))
+
+		//pc, _ := parsePluginConfiguration(handler.Host.GetConfig())
+		//rules = pc.rules
+
+		//req.Headers().Set("Wasm-rules-len", strconv.Itoa(len(rules)))
 		next = true
-		return
+	default:
+		fail(resp, "unknown x-httpwasm-test-id")
 	}
-	headerRcvd = true
-
-	req.Headers().Set("Wasm-Context", strconv.Itoa(contextID))
-	req.Headers().Set("newheader", "newheadervalue")
-	req.Headers().Set("server", "envoy-httpwasm")
-	names := req.Headers().Names()
-
-	handler.Host.Log(api.LogLevelInfo, "handle_request header-names: "+fmt.Sprintf("%v", names))
-	requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
-	if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
-		panic("unexpected features, want: " + want.String() + ", have: " + have.String())
-	}
-
-	//handler.Host.Log(api.LogLevelInfo, string(handler.Host.GetConfig()))
-
-	//pc, _ := parsePluginConfiguration(handler.Host.GetConfig())
-	//rules = pc.rules
-
-	//req.Headers().Set("Wasm-rules-len", strconv.Itoa(len(rules)))
-	next = true
 	return
 }
 func readBody(req api.Request, resp api.Response) {
@@ -128,4 +150,9 @@ func HandleResponse(ctx uint32, _ api.Request, res api.Response, err bool) {
 	handler.Host.Log(api.LogLevelInfo, "responseeee header-names: "+fmt.Sprintf("%v", names))
 	readRespBody(nil, res)
 
+}
+
+func fail(resp api.Response, msg string) {
+	resp.SetStatusCode(500)
+	resp.Headers().Set("x-httpwasm-tck-failed", msg)
 }

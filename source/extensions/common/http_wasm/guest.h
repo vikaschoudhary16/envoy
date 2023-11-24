@@ -25,7 +25,8 @@ class Guest : public Logger::Loggable<Logger::Id::wasm>,
               public std::enable_shared_from_this<Guest> {
 public:
   // This is used to create clonable main thread local Guest
-  Guest(const Stats::ScopeSharedPtr& scope, Api::Api& api, Event::Dispatcher& dispatcher);
+  Guest(const Stats::ScopeSharedPtr& scope, Api::Api& api, Event::Dispatcher& dispatcher,
+        std::unordered_map<std::string, std::string> envs);
   // This is used to create non-clonable thread local Guest, cloned from main thread Guest.
   Guest(std::shared_ptr<Guest> main_thread_guest, Event::Dispatcher& dispatcher);
   ~Guest();

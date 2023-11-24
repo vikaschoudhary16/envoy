@@ -52,7 +52,8 @@ void Guest::initializeLifecycle(Server::ServerLifecycleNotifier& lifecycle_notif
                                       });
 }
 
-Guest::Guest(const Stats::ScopeSharedPtr& scope, Api::Api& api, Event::Dispatcher& dispatcher)
+Guest::Guest(const Stats::ScopeSharedPtr& scope, Api::Api& api, Event::Dispatcher& dispatcher,
+             std::unordered_map<std::string, std::string> envs)
     : scope_(scope), api_(api), dispatcher_(dispatcher), time_source_(dispatcher.timeSource()),
       runtime_(createV8Runtime()) {
 
@@ -61,6 +62,11 @@ Guest::Guest(const Stats::ScopeSharedPtr& scope, Api::Api& api, Event::Dispatche
     ENVOY_LOG(error, "Failed to create guest");
     return;
   }
+  // populate environment variables
+  for (auto& it : envs) {
+    envs_[it.first] = it.second;
+  }
+
   runtime_->addFailCallback([this](FailState fail_state) { failed_ = fail_state; });
   ENVOY_LOG(debug, "Guest created now active");
 }
@@ -73,6 +79,10 @@ Guest::Guest(GuestSharedPtr guest, Event::Dispatcher& dispatcher)
   if (!runtime_) {
     failed_ = FailState::UnableToCreateVm;
     return;
+  }
+  // populate environment variables
+  for (auto& it : parent_guest_->envs_) {
+    envs_[it.first] = it.second;
   }
   runtime_->addFailCallback([this](FailState fail_state) { failed_ = fail_state; });
   ENVOY_LOG(debug, "Thread-Local Guest created now active");
@@ -212,8 +222,9 @@ Context* Guest::createGuestContext(const std::shared_ptr<GuestConfig>& guest_con
 
 GuestSharedPtr newGuest(const Stats::ScopeSharedPtr& scope, Api::Api& api,
                         Event::Dispatcher& dispatcher,
-                        Server::ServerLifecycleNotifier& lifecycle_notifier) {
-  auto guest = std::make_shared<Guest>(scope, api, dispatcher);
+                        Server::ServerLifecycleNotifier& lifecycle_notifier,
+                        std::unordered_map<std::string, std::string> envs) {
+  auto guest = std::make_shared<Guest>(scope, api, dispatcher, envs);
   guest->initializeLifecycle(lifecycle_notifier);
   return std::move(guest);
 }
@@ -242,7 +253,8 @@ bool loadGuestAndSetTlsSlot(const GuestConfigSharedPtr& guest_config,
   }
 
   std::shared_ptr<Guest> guest;
-  guest = newGuest(scope, api, dispatcher, lifecycle_notifier);
+  guest =
+      newGuest(scope, api, dispatcher, lifecycle_notifier, guest_config->environmentVariables());
   if (!guest) {
     ENVOY_LOG_TO_LOGGER(Envoy::Logger::Registry::getLog(Envoy::Logger::Id::wasm), error,
                         "Unable to create Guest");

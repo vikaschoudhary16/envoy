@@ -210,8 +210,10 @@ int64_t read_body(Word kind, Word val, Word size) {
   }
   auto* context = contextOrEffectiveContext();
   auto* buffer = context->getBuffer(static_cast<WasmBufferType>(kind.u64_));
+  uint64_t eof = context->endOfStream() ? 1 : 0;
+  eof = (eof << 32);
   if (buffer == nullptr) {
-    uint64_t eof = 1;
+    eof = 1;
     eof = (eof << 32);
     return eof;
   }
@@ -219,8 +221,9 @@ int64_t read_body(Word kind, Word val, Word size) {
   if (!targetMemory) {
     return 0;
   }
-  return buffer->copyTo(
-      const_cast<void*>(reinterpret_cast<const void*>(targetMemory.value().data())), size);
+  return (eof &
+          buffer->copyTo(
+              const_cast<void*>(reinterpret_cast<const void*>(targetMemory.value().data())), size));
 }
 
 void write_body(Word kind, Word val, Word size) {

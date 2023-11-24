@@ -23,16 +23,16 @@ namespace HttpWasm {
 #define MOCK_CONTEXT_LOG_                                                                          \
   using Context::log;                                                                              \
   WasmResult log(int32_t level, std::string_view message) override {                               \
-    log_(static_cast<spdlog::level::level_enum>(level), toAbslStringView(message));                \
+    log_(static_cast<LogLevel>(level), toAbslStringView(message));                                 \
     return WasmResult::Ok;                                                                         \
   }                                                                                                \
-  MOCK_METHOD(void, log_, (spdlog::level::level_enum level, absl::string_view message))
+  MOCK_METHOD(void, log_, (LogLevel level, absl::string_view message))
 
 class TestFilter : public Envoy::Extensions::HttpFilters::HttpWasm::Context {
 public:
   TestFilter(std::shared_ptr<Guest> guest, GuestConfigSharedPtr& guest_config)
       : Context(guest, guest_config) {}
-  // MOCK_CONTEXT_LOG_;
+  MOCK_CONTEXT_LOG_;
 };
 
 class WasmHttpFilterTest : public testing::Test {
@@ -61,6 +61,11 @@ public:
     code:
       local:
         filename: "{{ test_rundir }}/test/extensions/filters/http/http_wasm/test_data/req-header/envoy-tests.wasm"
+    environment_variables:
+      key_values:
+        ENVOY_HTTP_WASM_TEST_HEADERS_KEY_VALUE_ENV: bar
+      host_env_keys:
+        - ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV
     )EOF"));
 
     TestUtility::loadFromYaml(yaml, guest_config);
@@ -96,21 +101,21 @@ protected:
   NiceMock<Server::MockServerLifecycleNotifier> lifecycle_notifier_;
 };
 
-TEST_F(WasmHttpFilterTest, HeadersOnlyRequestHeadersOnlyWithEnvVars) {
-  std::unordered_map<std::string, std::string> envs;
+TEST_F(WasmHttpFilterTest, HeadersOnlyRequestHeadersWithEnvVars) {
   const std::string host_env_key = "ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV";
   const std::string host_env_value = "foo";
-  const std::string env_key = "ENVOY_HTTP_WASM_TEST_HEADERS_KEY_VALUE_ENV";
-  const std::string env_value = "bar";
   TestEnvironment::setEnvVar(host_env_key, host_env_value, 0);
-  envs[host_env_key.c_str()] = env_value;
   setup();
   EXPECT_CALL(encoder_callbacks_, streamInfo()).WillRepeatedly(ReturnRef(request_stream_info_));
+  EXPECT_CALL(filter(),
+              log_(LogLevel::info, Eq("envs: ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV: foo\n"
+                                      "ENVOY_HTTP_WASM_TEST_HEADERS_KEY_VALUE_ENV: bar")));
 
   NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
   filter().setDecoderFilterCallbacks(decoder_callbacks);
 
-  Http::TestRequestHeaderMapImpl request_headers{{":path", "/"}, {"server", "envoy"}};
+  Http::TestRequestHeaderMapImpl request_headers{
+      {":path", "/"}, {"server", "envoy"}, {"testid", "headers only with env vars"}};
   EXPECT_EQ(Http::FilterHeadersStatus::Continue, filter().decodeHeaders(request_headers, true));
   // this new header is added by the wasm module
   EXPECT_THAT(request_headers.get_("newheader"), Eq("newheadervalue"));

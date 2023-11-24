@@ -171,6 +171,8 @@ public:
   uint8_t getGuestFeatureSet() { return guest_feature_set_; }
   void overwriteRequestBody(std::string_view data, size_t length);
 
+  bool endOfStream() { return end_of_stream_; }
+
 protected:
   friend class Guest;
   Http::HeaderMap* getMap(WasmHeaderMapType type);
