@@ -445,7 +445,6 @@ Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers
 
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
   clearLocalResponse();
-  end_of_stream_ = end_stream;
 
   // guest expects request body and this is not a header-only so return and call handle_request
   // when body is received.
@@ -463,15 +462,21 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
 
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpRequestBody);
   clearLocalResponse();
-  end_of_stream_ = end_stream;
+
+  if ((multi_chunk_request_body_) &&
+      (!(((this->getGuestFeatureSet() & 1) ||
+          (this->guest()->contexts_[0]->getGuestFeatureSet() & 1))))) {
+    ENVOY_LOG(info, "decodeData: guest has not enabled request buffering. Skipping wasm filter");
+    return Http::FilterDataStatus::Continue;
+  }
+
   if (!end_stream) {
+    multi_chunk_request_body_ = true;
     if (!(((this->getGuestFeatureSet() & 1) ||
            (this->guest()->contexts_[0]->getGuestFeatureSet() & 1)))) {
-      ENVOY_LOG(info, "decodeData: guest has not enable request buffering. Skipping to send "
-                      "request body in chunks");
+      ENVOY_LOG(info, "decodeData: guest has not enabled request buffering. Skipping wasm filter");
       return Http::FilterDataStatus::Continue;
     }
-
     if (guest_config_->config().max_request_bytes().value() == 0) {
       ENVOY_LOG(error, "{}: decodeData: max_request_body_size is not set", guest_config_->name_);
     } else {
@@ -479,8 +484,8 @@ Http::FilterDataStatus Context::decodeData(::Envoy::Buffer::Instance& data, bool
     }
     return Http::FilterDataStatus::StopIterationAndBuffer;
   }
-  decoder_callbacks_->addDecodedData(data, false);
 
+  decoder_callbacks_->addDecodedData(data, false);
   request_buffer_ = *decoder_callbacks_->decodingBuffer();
   request_headers_->setContentLength(request_buffer_.length());
 
@@ -535,7 +540,6 @@ Http::FilterHeadersStatus Context::encodeHeaders(Http::ResponseHeaderMap& header
     return Http::FilterHeadersStatus::StopIteration;
   }
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpResponseBody);
-  end_of_stream_ = end_stream;
   auto result = convertFilterHeadersStatus(onResponseHeaders(headerSize(&headers), end_stream));
   return result;
 }
@@ -545,7 +549,6 @@ Http::FilterDataStatus Context::encodeData(::Envoy::Buffer::Instance& data, bool
 
   LocalResponseAfterGuestCall actions(this, WasmBufferType::HttpResponseBody);
   response_body_buffer_ = &data;
-  end_of_stream_ = end_stream;
   const auto buffer = getBuffer(WasmBufferType::HttpResponseBody);
   const auto buffer_size = (buffer == nullptr) ? 0 : buffer->size();
   auto result = convertFilterDataStatus(onResponseBody(buffer_size, end_stream));

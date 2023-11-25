@@ -171,8 +171,6 @@ public:
   uint8_t getGuestFeatureSet() { return guest_feature_set_; }
   void overwriteRequestBody(std::string_view data, size_t length);
 
-  bool endOfStream() { return end_of_stream_; }
-
 protected:
   friend class Guest;
   Http::HeaderMap* getMap(WasmHeaderMapType type);
@@ -197,7 +195,7 @@ protected:
 
   // Temporary state.
   WasmBuffer buffer_;
-  bool end_of_stream_ = false;
+  bool multi_chunk_request_body_ = false;
 
   Guest* guest_ = nullptr;
   std::shared_ptr<Guest> guest_shared_ = nullptr;

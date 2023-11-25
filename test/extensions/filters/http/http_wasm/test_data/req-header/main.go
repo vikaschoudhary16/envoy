@@ -71,9 +71,35 @@ func handleRequest(req api.Request, resp api.Response) (next bool, reqCtx uint32
 			msg += "\nENVOY_HTTP_WASM_TEST_HEADERS_KEY_VALUE_ENV: " + value
 		}
 		handler.Host.Log(api.LogLevelInfo, "envs: "+msg)
+
+		req.Headers().Set("Wasm-Context", strconv.Itoa(contextID))
+		req.Headers().Set("newheader", "newheadervalue")
+		req.Headers().Set("server", "envoy-httpwasm")
+		next = true
+	case "read body without req buffering":
 		if headerRcvd {
 			headerRcvd = false
-			readBody(req, resp)
+			readBody(req, resp, "read body without req buffering")
+			writeBody(req, resp)
+
+			next = true
+			return
+		}
+		headerRcvd = true
+
+		// req.Headers().Set("Wasm-Context", strconv.Itoa(contextID))
+		// req.Headers().Set("newheader", "newheadervalue")
+		// req.Headers().Set("server", "envoy-httpwasm")
+		// requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
+		// if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
+		// 	panic("unexpected features, want: " + want.String() + ", have: " + have.String())
+		// }
+
+		next = true
+	case "read body":
+		if headerRcvd {
+			headerRcvd = false
+			readBody(req, resp, "read body")
 			writeBody(req, resp)
 
 			next = true
@@ -84,34 +110,25 @@ func handleRequest(req api.Request, resp api.Response) (next bool, reqCtx uint32
 		req.Headers().Set("Wasm-Context", strconv.Itoa(contextID))
 		req.Headers().Set("newheader", "newheadervalue")
 		req.Headers().Set("server", "envoy-httpwasm")
-		//names := req.Headers().Names()
-
-		//handler.Host.Log(api.LogLevelInfo, "handle_request header-names:: "+fmt.Sprintf("%v", names))
 		requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
 		if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
 			panic("unexpected features, want: " + want.String() + ", have: " + have.String())
 		}
 
-		//handler.Host.Log(api.LogLevelInfo, string(handler.Host.GetConfig()))
-
-		//pc, _ := parsePluginConfiguration(handler.Host.GetConfig())
-		//rules = pc.rules
-
-		//req.Headers().Set("Wasm-rules-len", strconv.Itoa(len(rules)))
 		next = true
 	default:
 		fail(resp, "unknown x-httpwasm-test-id")
 	}
 	return
 }
-func readBody(req api.Request, resp api.Response) {
+func readBody(req api.Request, resp api.Response, msg string) {
 	for {
 		body := make([]byte, 5)
 		size, eof := req.Body().Read(body)
 		if size > 0 && eof {
-			handler.Host.Log(api.LogLevelInfo, "read-body: "+string(body)+"; size: "+strconv.Itoa(int(size))+"; eof: "+strconv.FormatBool(eof))
+			handler.Host.Log(api.LogLevelInfo, msg+": "+string(body[:size])+"; size: "+strconv.Itoa(int(size))+"; eof: "+strconv.FormatBool(eof))
 		} else {
-			handler.Host.Log(api.LogLevelInfo, "read-body: "+string(body)+"; size: "+strconv.Itoa(int(size))+"; eof: "+strconv.FormatBool(eof))
+			handler.Host.Log(api.LogLevelInfo, msg+": "+string(body)+"; size: "+strconv.Itoa(int(size))+"; eof: "+strconv.FormatBool(eof))
 		}
 		if eof {
 			break

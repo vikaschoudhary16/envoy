@@ -126,6 +126,123 @@ TEST_F(WasmHttpFilterTest, HeadersOnlyRequestHeadersWithEnvVars) {
   filter().onDestroy();
 }
 
+// plugin reads the body in single call. Request buffering is not enabled.
+TEST_F(WasmHttpFilterTest, NoBufferingReadBodySingleCall) {
+  setup();
+  // plugin reads 5 bytes max at a time
+  EXPECT_CALL(
+      filter(),
+      log_(LogLevel::info,
+           Eq(absl::string_view("read body without req buffering: lion; size: 4; eof: true"))));
+  Http::TestRequestHeaderMapImpl request_headers{{":path", "/"},
+                                                 {"testid", "read body without req buffering"}};
+  EXPECT_EQ(Http::FilterHeadersStatus::StopIteration,
+            filter().decodeHeaders(request_headers, false));
+  Buffer::OwnedImpl data("lion");
+  EXPECT_CALL(decoder_callbacks_, addDecodedData(_, false));
+  EXPECT_CALL(decoder_callbacks_, decodingBuffer).WillOnce(Return(&data));
+  EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data, true));
+  filter().onDestroy();
+}
+
+// plugin reads the body in multiple calls. Request buffering is not enabled.
+TEST_F(WasmHttpFilterTest, NoBufferingReadBodyMultipleCalls) {
+  setup();
+  // plugin reads 5 bytes max at a time
+  // reads 'lion ' and then 'king'
+  EXPECT_CALL(
+      filter(),
+      log_(LogLevel::info,
+           Eq(absl::string_view("read body without req buffering: lion ; size: 5; eof: false"))));
+  EXPECT_CALL(
+      filter(),
+      log_(LogLevel::info,
+           Eq(absl::string_view("read body without req buffering: king; size: 4; eof: true"))));
+  Http::TestRequestHeaderMapImpl request_headers{{":path", "/"},
+                                                 {"testid", "read body without req buffering"}};
+  EXPECT_EQ(Http::FilterHeadersStatus::StopIteration,
+            filter().decodeHeaders(request_headers, false));
+  Buffer::OwnedImpl data("lion king");
+  EXPECT_CALL(decoder_callbacks_, addDecodedData(_, false));
+  EXPECT_CALL(decoder_callbacks_, decodingBuffer).WillOnce(Return(&data));
+  EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data, true));
+  filter().onDestroy();
+}
+
+// plugin reads the body in multiple calls. Request buffering is not enabled.
+TEST_F(WasmHttpFilterTest, NoBufferingBigBody) {
+  setup();
+  // plugin reads 5 bytes max at a time
+  // reads 'lion ' and then 'king'
+  Http::TestRequestHeaderMapImpl request_headers{{":path", "/"},
+                                                 {"testid", "read body without req buffering"}};
+  EXPECT_EQ(Http::FilterHeadersStatus::StopIteration,
+            filter().decodeHeaders(request_headers, false));
+  Buffer::OwnedImpl data1("lion ");
+  Buffer::OwnedImpl data2("king");
+  EXPECT_CALL(decoder_callbacks_, addDecodedData(_, false)).Times(0);
+  EXPECT_CALL(decoder_callbacks_, decodingBuffer).Times(0);
+  EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data1, false));
+  EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data2, true));
+  filter().onDestroy();
+}
+
+// plugin reads the body in single call. Request buffering is enabled per request.
+TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBodySingleCall) {
+  setup();
+  // plugin reads 5 bytes max at a time
+  EXPECT_CALL(filter(),
+              log_(LogLevel::info, Eq(absl::string_view("read body: lion; size: 4; eof: true"))));
+  Http::TestRequestHeaderMapImpl request_headers{{":path", "/"}, {"testid", "read body"}};
+  EXPECT_EQ(Http::FilterHeadersStatus::StopIteration,
+            filter().decodeHeaders(request_headers, false));
+  Buffer::OwnedImpl data("lion");
+  EXPECT_CALL(decoder_callbacks_, addDecodedData(_, false));
+  EXPECT_CALL(decoder_callbacks_, decodingBuffer).WillOnce(Return(&data));
+  EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data, true));
+  filter().onDestroy();
+}
+
+// plugin reads the body in multiple calls.
+TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBodyMultipleCalls) {
+  setup();
+  // plugin reads 5 bytes max at a time
+  // reads 'lion ' and then 'king'
+  EXPECT_CALL(filter(),
+              log_(LogLevel::info, Eq(absl::string_view("read body: lion ; size: 5; eof: false"))));
+  EXPECT_CALL(filter(),
+              log_(LogLevel::info, Eq(absl::string_view("read body: king; size: 4; eof: true"))));
+  Http::TestRequestHeaderMapImpl request_headers{{":path", "/"}, {"testid", "read body"}};
+  EXPECT_EQ(Http::FilterHeadersStatus::StopIteration,
+            filter().decodeHeaders(request_headers, false));
+  Buffer::OwnedImpl data("lion king");
+  EXPECT_CALL(decoder_callbacks_, addDecodedData(_, false));
+  EXPECT_CALL(decoder_callbacks_, decodingBuffer).WillOnce(Return(&data));
+  EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data, true));
+  filter().onDestroy();
+}
+
+// plugin reads the body in multiple calls. Request buffering is enabled per request.
+// Big body means body is coming in multiple decodeData calls
+TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBigBodyMultipleCalls) {
+  setup();
+  // plugin reads 5 bytes max at a time
+  // reads 'lion ' and then 'king'
+  EXPECT_CALL(filter(),
+              log_(LogLevel::info, Eq(absl::string_view("read body: lion ; size: 5; eof: false"))));
+  EXPECT_CALL(filter(),
+              log_(LogLevel::info, Eq(absl::string_view("read body: king; size: 4; eof: true"))));
+  Http::TestRequestHeaderMapImpl request_headers{{":path", "/"}, {"testid", "read body"}};
+  EXPECT_EQ(Http::FilterHeadersStatus::StopIteration,
+            filter().decodeHeaders(request_headers, false));
+  Buffer::OwnedImpl data("lion king");
+  EXPECT_CALL(decoder_callbacks_, addDecodedData(_, false));
+  EXPECT_CALL(decoder_callbacks_, decodingBuffer).WillOnce(Return(&data));
+  EXPECT_EQ(Http::FilterDataStatus::StopIterationAndBuffer, filter().decodeData(data, false));
+  EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data, true));
+  filter().onDestroy();
+}
+
 } // namespace HttpWasm
 } // namespace HttpFilters
 } // namespace Extensions
