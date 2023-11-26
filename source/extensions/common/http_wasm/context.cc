@@ -144,7 +144,7 @@ void Context::overwriteRequestBody(std::string_view data, size_t length) {
   decoder_callbacks_->modifyDecodingBuffer([data](Buffer::Instance& dec_buf) {
     Buffer::OwnedImpl new_buf;
     new_buf.add(data);
-    // effectively swap(data, json_buf)
+    // effectively swap(data, dec_buf)
     dec_buf.drain(dec_buf.length());
     dec_buf.move(new_buf);
   });
@@ -413,6 +413,8 @@ void Context::sendLocalResponse(WasmBufferType type) {
         break;
       }
     }
+    replaceHeaderMapValue(WasmHeaderMapType::ResponseHeaders, ":status",
+                          std::to_string(enumToInt(local_response_status_code_)));
     const auto update_headers = [this](Envoy::Http::ResponseHeaderMap& headers) {
       // copy this->response_headers_ to headers
       headers = *this->response_headers_;

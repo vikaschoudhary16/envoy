@@ -41,7 +41,7 @@ func main() {
 	// }
 	//_ = handler.Host.GetConfig()
 	handler.HandleRequestFn = handleRequest
-	//handler.HandleResponseFn = HandleResponse
+	handler.HandleResponseFn = HandleResponse
 }
 
 // guest can define the context ID, or it can be looked up in host config.
@@ -80,8 +80,6 @@ func handleRequest(req api.Request, resp api.Response) (next bool, reqCtx uint32
 		if headerRcvd {
 			headerRcvd = false
 			readBody(req, resp, "read body without req buffering")
-			writeBody(req, resp)
-
 			next = true
 			return
 		}
@@ -97,6 +95,24 @@ func handleRequest(req api.Request, resp api.Response) (next bool, reqCtx uint32
 
 		next = true
 	case "read body":
+		if headerRcvd {
+			headerRcvd = false
+			readBody(req, resp, "read body")
+			next = true
+			return
+		}
+		headerRcvd = true
+
+		req.Headers().Set("Wasm-Context", strconv.Itoa(contextID))
+		req.Headers().Set("newheader", "newheadervalue")
+		req.Headers().Set("server", "envoy-httpwasm")
+		requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
+		if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
+			panic("unexpected features, want: " + want.String() + ", have: " + have.String())
+		}
+
+		next = true
+	case "write body":
 		if headerRcvd {
 			headerRcvd = false
 			readBody(req, resp, "read body")
@@ -156,7 +172,7 @@ func writeBody(req api.Request, resp api.Response) (next bool, reqCtx uint32) {
 	req.Body().Write(body)
 	//req.Headers().Set("content-length", strconv.Itoa())
 
-	//handler.Host.Log(api.LogLevelInfo, "writebody: "+string(body))
+	handler.Host.Log(api.LogLevelInfo, "writebody: "+string(body))
 	next = true
 	return
 }
@@ -164,8 +180,12 @@ func writeBody(req api.Request, resp api.Response) (next bool, reqCtx uint32) {
 // HandleResponse implements Middleware.HandleResponse
 func HandleResponse(ctx uint32, _ api.Request, res api.Response, err bool) {
 	names := res.Headers().Names()
-	handler.Host.Log(api.LogLevelInfo, "responseeee header-names: "+fmt.Sprintf("%v", names))
-	readRespBody(nil, res)
+	handler.Host.Log(api.LogLevelInfo, "response header-names: "+fmt.Sprintf("%v", names))
+	//case "set status code":
+	res.SetStatusCode(500)
+	res.Headers().Set("testid", "overwritten-by-plugin")
+	res.Headers().Set("new-res-key", "new-res-value")
+	//readRespBody(nil, res)
 
 }
 

@@ -110,6 +110,7 @@ TEST_F(WasmHttpFilterTest, HeadersOnlyRequestHeadersWithEnvVars) {
   EXPECT_CALL(filter(),
               log_(LogLevel::info, Eq("envs: ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV: foo\n"
                                       "ENVOY_HTTP_WASM_TEST_HEADERS_KEY_VALUE_ENV: bar")));
+  EXPECT_CALL(filter(), log_(LogLevel::info, Eq("response header-names: [:status testid]")));
 
   NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
   filter().setDecoderFilterCallbacks(decoder_callbacks);
@@ -121,8 +122,18 @@ TEST_F(WasmHttpFilterTest, HeadersOnlyRequestHeadersWithEnvVars) {
   EXPECT_THAT(request_headers.get_("newheader"), Eq("newheadervalue"));
   // this header is overwritten by the wasm module
   EXPECT_THAT(request_headers.get_("server"), Eq("envoy-httpwasm"));
-  Http::TestResponseHeaderMapImpl response_headers;
-  EXPECT_EQ(filter().encode1xxHeaders(response_headers), Http::Filter1xxHeadersStatus::Continue);
+  // Verify that the response still works even though we buffered the request.
+
+  Http::TestResponseHeaderMapImpl response_headers{{":status", "200"},
+                                                   {"testid", "set status code"}};
+  EXPECT_EQ(Http::FilterHeadersStatus::Continue, filter().encodeHeaders(response_headers, true));
+  ASSERT_NE(nullptr, response_headers.Status());
+
+  // 200 -> 500 by wasm plugin
+  EXPECT_EQ("500", response_headers.getStatusValue());
+  EXPECT_THAT(response_headers.get_("testid"), Eq("overwritten-by-plugin"));
+  EXPECT_THAT(response_headers.get_("new-res-key"), Eq("new-res-value"));
+
   filter().onDestroy();
 }
 
@@ -240,6 +251,31 @@ TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBigBodyMultipleCalls) {
   EXPECT_CALL(decoder_callbacks_, decodingBuffer).WillOnce(Return(&data));
   EXPECT_EQ(Http::FilterDataStatus::StopIterationAndBuffer, filter().decodeData(data, false));
   EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data, true));
+}
+
+// plugin reads the body in multiple calls. Request buffering is enabled per request.
+// Big body means body is coming in multiple decodeData calls
+TEST_F(WasmHttpFilterTest, WriteBody) {
+  setup();
+  // plugin reads 5 bytes max at a time
+  EXPECT_CALL(filter(),
+              log_(LogLevel::info, Eq(absl::string_view("read body: lion; size: 4; eof: true"))));
+  EXPECT_CALL(filter(), log_(LogLevel::info, Eq(absl::string_view("writebody: Hello, Mr.GoGo!"))));
+  Http::TestRequestHeaderMapImpl request_headers{{":path", "/"}, {"testid", "write body"}};
+  EXPECT_EQ(Http::FilterHeadersStatus::StopIteration,
+            filter().decodeHeaders(request_headers, false));
+  Buffer::OwnedImpl data("lion");
+  EXPECT_CALL(decoder_callbacks_, addDecodedData(_, false));
+  EXPECT_CALL(decoder_callbacks_, decodingBuffer).WillOnce(Return(&data));
+
+  auto on_modify_decoding_buffer = [&data](std::function<void(Buffer::Instance&)> cb) { cb(data); };
+  EXPECT_CALL(decoder_callbacks_, modifyDecodingBuffer)
+      .WillRepeatedly(Invoke(on_modify_decoding_buffer));
+  EXPECT_EQ(Http::FilterDataStatus::StopIterationAndBuffer, filter().decodeData(data, false));
+  EXPECT_EQ(Http::FilterDataStatus::Continue, filter().decodeData(data, true));
+
+  // "lion" is overwritten to "Hello, Mr.GoGo!" by wasm plugin
+  EXPECT_STREQ("Hello, Mr.GoGo!", data.toString().c_str());
   filter().onDestroy();
 }
 
