@@ -149,9 +149,9 @@ attrs==23.1.0 \
     # via
     #   -r requirements.in
     #   aiohttp
-babel==2.12.1 \
-    --hash=sha256:b4246fb7677d3b98f501a39d43396d3cafdc8eadb045f4a31be01863f655c610 \
-    --hash=sha256:cc2d99999cd01d44420ae725a21c9e3711b3aadc7976d6147f622d8581963455
+babel==2.14.0 \
+    --hash=sha256:6919867db036398ba21eb5c7a0f6b28ab8cbc3ae7a73a44ebe34ae74a4e7d363 \
+    --hash=sha256:efb1a25b7118e67ce3a259bed20545c29cb68be8ad2c784c83689981b7a57287
     # via
     #   -r requirements.in
     #   sphinx
@@ -734,6 +734,7 @@ pyjwt[crypto]==2.8.0 \
     # via
     #   -r requirements.in
     #   gidgethub
+    #   pyjwt
 pyparsing==3.1.1 \
     --hash=sha256:32c7c0b711493c72ff18a981d24f28aaf9c1fb7ed5e9667c9e84e3db623bdbfb \
     --hash=sha256:ede28a1a32462f5a9705e07aea48001a08f7cf81a021585011deba701581a0db
