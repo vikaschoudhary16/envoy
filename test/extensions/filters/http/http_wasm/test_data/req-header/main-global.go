@@ -33,12 +33,12 @@ import (
 
 // build main like below:
 // tinygo version 0.30.0 linux/amd64 (using go version go1.19 and LLVM version 16.0.1)
-// tinygo build -o envoy-tests.wasm -scheduler=none --no-debug -target=wasi main.go
+// tinygo build -o envoy-tests-global.wasm -scheduler=none --no-debug -target=wasi main.go
 func main() {
-	// requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
-	// if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
-	// 	panic("unexpected features, want: " + want.String() + ", have: " + have.String())
-	// }
+	requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
+	if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
+		panic("unexpected features, want: " + want.String() + ", have: " + have.String())
+	}
 	//_ = handler.Host.GetConfig()
 	handler.HandleRequestFn = handleRequest
 	handler.HandleResponseFn = HandleResponse
@@ -96,21 +96,21 @@ func handleRequest(req api.Request, resp api.Response) (next bool, reqCtx uint32
 
 		next = true
 	case "read body":
-		if headerRcvd {
-			headerRcvd = false
-			readBody(req, resp, "read body")
-			next = true
-			return
-		}
-		headerRcvd = true
+		// if headerRcvd {
+		// 	headerRcvd = false
+		// 	next = true
+		// 	return
+		// }
+		// headerRcvd = true
+		readBody(req, resp, "read body")
 
 		req.Headers().Set("Wasm-Context", strconv.Itoa(contextID))
 		req.Headers().Set("newheader", "newheadervalue")
 		req.Headers().Set("server", "envoy-httpwasm")
-		requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
-		if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
-			panic("unexpected features, want: " + want.String() + ", have: " + have.String())
-		}
+		// requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
+		// if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
+		// 	panic("unexpected features, want: " + want.String() + ", have: " + have.String())
+		// }
 
 		next = true
 	case "write body":
@@ -127,10 +127,10 @@ func handleRequest(req api.Request, resp api.Response) (next bool, reqCtx uint32
 		req.Headers().Set("Wasm-Context", strconv.Itoa(contextID))
 		req.Headers().Set("newheader", "newheadervalue")
 		req.Headers().Set("server", "envoy-httpwasm")
-		requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
-		if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
-			panic("unexpected features, want: " + want.String() + ", have: " + have.String())
-		}
+		// requiredFeatures := api.FeatureBufferRequest | api.FeatureBufferResponse
+		// if want, have := requiredFeatures, handler.Host.EnableFeatures(requiredFeatures); !have.IsEnabled(want) {
+		// 	panic("unexpected features, want: " + want.String() + ", have: " + have.String())
+		// }
 
 		next = true
 	default:

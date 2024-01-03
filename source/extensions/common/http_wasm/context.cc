@@ -452,7 +452,10 @@ Http::FilterHeadersStatus Context::decodeHeaders(Http::RequestHeaderMap& headers
   // when body is received.
   if (!end_stream) {
     decoder_callbacks_->setDecoderBufferLimit(guest_config_->config().max_request_bytes().value());
-    onRequestHeaders(headerSize(&headers), end_stream);
+    if (!(this->guest()->contexts_[0]->getGuestFeatureSet() & 1)) {
+      ENVOY_LOG(debug, "decodeHeaders: guest has not enabled request buffering at global level.");
+      onRequestHeaders(headerSize(&headers), end_stream);
+    }
     // request has a body, so we will handle request in decodeData.
     return Http::FilterHeadersStatus::StopIteration;
   }

@@ -35,7 +35,7 @@ public:
   MOCK_CONTEXT_LOG_;
 };
 
-class WasmHttpFilterTest : public testing::Test {
+class WasmHttpFilterTest : public testing::TestWithParam<std::string> {
 public:
   WasmHttpFilterTest()
       : symbol_table_(std::make_unique<Stats::SymbolTableImpl>()),
@@ -53,7 +53,10 @@ public:
   void setup() {
     Api::ApiPtr api = Api::createApiForTest(*store_);
     envoy::extensions::filters::http::http_wasm::v3::GuestConfig guest_config;
-    const std::string yaml = TestEnvironment::substitute(absl::StrCat(R"EOF(
+    std::string yaml = "";
+    if (GetParam() == "per_request") {
+
+      yaml = TestEnvironment::substitute(absl::StrCat(R"EOF(
     max_request_bytes: 5242880
     configuration:
        "@type": "type.googleapis.com/google.protobuf.StringValue"
@@ -67,6 +70,22 @@ public:
       host_env_keys:
         - ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV
     )EOF"));
+    } else {
+      yaml = TestEnvironment::substitute(absl::StrCat(R"EOF(
+    max_request_bytes: 5242880
+    configuration:
+       "@type": "type.googleapis.com/google.protobuf.StringValue"
+       value: "some configuration"
+    code:
+      local:
+        filename: "{{ test_rundir }}/test/extensions/filters/http/http_wasm/test_data/req-header/envoy-tests-global.wasm"
+    environment_variables:
+      key_values:
+        ENVOY_HTTP_WASM_TEST_HEADERS_KEY_VALUE_ENV: bar
+      host_env_keys:
+        - ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV
+    )EOF"));
+    }
 
     TestUtility::loadFromYaml(yaml, guest_config);
     guest_config_ = std::make_shared<GuestConfig>(guest_config);
@@ -101,7 +120,10 @@ protected:
   NiceMock<Server::MockServerLifecycleNotifier> lifecycle_notifier_;
 };
 
-TEST_F(WasmHttpFilterTest, HeadersOnlyRequestHeadersWithEnvVars) {
+INSTANTIATE_TEST_SUITE_P(HttpWasmTests, WasmHttpFilterTest,
+                         ::testing::Values("per_request", "global"));
+
+TEST_P(WasmHttpFilterTest, HeadersOnlyRequestHeadersWithEnvVars) {
   const std::string host_env_key = "ENVOY_HTTP_WASM_TEST_HEADERS_HOST_ENV";
   const std::string host_env_value = "foo";
   TestEnvironment::setEnvVar(host_env_key, host_env_value, 0);
@@ -138,7 +160,7 @@ TEST_F(WasmHttpFilterTest, HeadersOnlyRequestHeadersWithEnvVars) {
 }
 
 // plugin reads the body in single call. Request buffering is not enabled.
-TEST_F(WasmHttpFilterTest, NoBufferingReadBodySingleCall) {
+TEST_P(WasmHttpFilterTest, NoBufferingReadBodySingleCall) {
   setup();
   // plugin reads 5 bytes max at a time
   EXPECT_CALL(
@@ -157,7 +179,7 @@ TEST_F(WasmHttpFilterTest, NoBufferingReadBodySingleCall) {
 }
 
 // plugin reads the body in multiple calls. Request buffering is not enabled.
-TEST_F(WasmHttpFilterTest, NoBufferingReadBodyMultipleCalls) {
+TEST_P(WasmHttpFilterTest, NoBufferingReadBodyMultipleCalls) {
   setup();
   // plugin reads 5 bytes max at a time
   // reads 'lion ' and then 'king'
@@ -181,7 +203,7 @@ TEST_F(WasmHttpFilterTest, NoBufferingReadBodyMultipleCalls) {
 }
 
 // plugin reads the body in multiple calls. Request buffering is not enabled.
-TEST_F(WasmHttpFilterTest, NoBufferingBigBody) {
+TEST_P(WasmHttpFilterTest, NoBufferingBigBody) {
   setup();
   // plugin reads 5 bytes max at a time
   // reads 'lion ' and then 'king'
@@ -199,11 +221,19 @@ TEST_F(WasmHttpFilterTest, NoBufferingBigBody) {
 }
 
 // plugin reads the body in single call. Request buffering is enabled per request.
-TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBodySingleCall) {
+TEST_P(WasmHttpFilterTest, BufferingReadBodySingleCall) {
   setup();
   // plugin reads 5 bytes max at a time
   EXPECT_CALL(filter(),
               log_(LogLevel::info, Eq(absl::string_view("read body: lion; size: 4; eof: true"))));
+  if (GetParam() == "per_request") {
+    EXPECT_CALL(filter(), log_(LogLevel::info, Eq(absl::string_view("handleRequest: read body"))))
+        .Times(2);
+  } else {
+    EXPECT_CALL(filter(), log_(LogLevel::info, Eq(absl::string_view("handleRequest: read body"))))
+        .Times(1);
+  }
+
   Http::TestRequestHeaderMapImpl request_headers{{":path", "/"}, {"testid", "read body"}};
   EXPECT_EQ(Http::FilterHeadersStatus::StopIteration,
             filter().decodeHeaders(request_headers, false));
@@ -215,7 +245,7 @@ TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBodySingleCall) {
 }
 
 // plugin reads the body in multiple calls.
-TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBodyMultipleCalls) {
+TEST_P(WasmHttpFilterTest, BufferingReadBodyMultipleCalls) {
   setup();
   // plugin reads 5 bytes max at a time
   // reads 'lion ' and then 'king'
@@ -235,7 +265,7 @@ TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBodyMultipleCalls) {
 
 // plugin reads the body in multiple calls. Request buffering is enabled per request.
 // Big body means body is coming in multiple decodeData calls
-TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBigBodyMultipleCalls) {
+TEST_P(WasmHttpFilterTest, BufferingReadBigBodyMultipleCalls) {
   setup();
   // plugin reads 5 bytes max at a time
   // reads 'lion ' and then 'king'
@@ -255,7 +285,7 @@ TEST_F(WasmHttpFilterTest, PerRequestBufferingReadBigBodyMultipleCalls) {
 
 // plugin reads the body in multiple calls. Request buffering is enabled per request.
 // Big body means body is coming in multiple decodeData calls
-TEST_F(WasmHttpFilterTest, WriteBody) {
+TEST_P(WasmHttpFilterTest, WriteBody) {
   setup();
   // plugin reads 5 bytes max at a time
   EXPECT_CALL(filter(),

@@ -42,6 +42,7 @@ envoy_extension_cc_test(
     srcs = ["wasm_filter_test.cc"],
     data = [
         "//test/extensions/filters/http/http_wasm/test_data/req-header:envoy-tests.wasm",
+        "//test/extensions/filters/http/http_wasm/test_data/req-header:envoy-tests-global.wasm",
     ],
     extension_names = ["envoy.filters.http.http_wasm"],
     deps = [
