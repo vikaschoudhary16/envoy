@@ -22,6 +22,9 @@ envoy_cc_library(
     hdrs = [
         "exports.h",
     ],
+    copts = [
+        "-Wno-error",
+    ],
     deps = [
         "//envoy/http:codes_interface",
         "//envoy/server:filter_config_interface",
@@ -51,6 +54,9 @@ envoy_cc_library(
         "guest_config.h",
         "vm_runtime.h",
     ],
+    copts = [
+        "-Wno-error",
+    ],
     deps = [
         "//envoy/http:codes_interface",
         "//envoy/server:filter_config_interface",
@@ -66,6 +72,9 @@ envoy_cc_extension(
     srcs = ["config.cc"],
     hdrs = [
         "config.h",
+    ],
+    copts = [
+        "-Wno-error",
     ],
     deps = [
         ":http_wasm_lib",
@@ -84,6 +93,9 @@ envoy_cc_library(
         "http_wasm_enums.h",
         "vm_runtime.h",
         "word.h",
+    ],
+    copts = [
+        "-Wno-error",
     ],
     external_deps = ["abseil_optional"],
     deps = [

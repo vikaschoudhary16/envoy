@@ -12,6 +12,9 @@ envoy_cc_library(
     name = "v8_lib",
     srcs = ["v8.cc"],
     hdrs = ["v8.h"],
+    copts = [
+        "-Wno-error",
+    ],
     external_deps = [
         "wee8",
     ],

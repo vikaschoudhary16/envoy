@@ -13,6 +13,9 @@ envoy_cc_library(
     name = "wasm_filter_lib",
     srcs = ["filter.cc"],
     hdrs = ["filter.h"],
+    copts = [
+        "-Wno-error",
+    ],
     deps = [
         "//envoy/http:codes_interface",
         "//envoy/server:filter_config_interface",
@@ -27,6 +30,9 @@ envoy_cc_extension(
     name = "config",
     srcs = ["config.cc"],
     hdrs = ["config.h"],
+    copts = [
+        "-Wno-error",
+    ],
     deps = [
         ":wasm_filter_lib",
         "//envoy/registry",
