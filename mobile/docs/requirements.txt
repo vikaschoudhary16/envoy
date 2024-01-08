@@ -734,6 +734,7 @@ pyjwt[crypto]==2.8.0 \
     # via
     #   -r requirements.in
     #   gidgethub
+    #   pyjwt
 pyparsing==3.1.1 \
     --hash=sha256:32c7c0b711493c72ff18a981d24f28aaf9c1fb7ed5e9667c9e84e3db623bdbfb \
     --hash=sha256:ede28a1a32462f5a9705e07aea48001a08f7cf81a021585011deba701581a0db
@@ -884,9 +885,9 @@ sphinxext-rediraffe==0.2.7 \
     # via
     #   -r requirements.in
     #   envoy-docs-sphinx-runner
-trycast==1.0.0 \
-    --hash=sha256:72dd9be7553337cfba04809646dc144ddd6e3a54f4213ab8b76a14b4a1882e04 \
-    --hash=sha256:93fcbb922ef3a22c587f636ed8c128266bb2615171983dbf2f7edd3ae86afb10
+trycast==1.1.0 \
+    --hash=sha256:09b194343bf07f0ffb2e228ff20d1cc63148fd9ab33b204acc5e03f1991d081c \
+    --hash=sha256:218d3b9b9a6de0423aadb92a5c7059b25f2919c63914f30f96dd7c87726196bd
     # via
     #   -r requirements.in
     #   aio-core
