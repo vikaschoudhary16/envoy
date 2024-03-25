@@ -12,9 +12,9 @@ abstracts==0.0.12 \
     #   aio-core
     #   aio-run-runner
     #   envoy-base-utils
-aio-api-github==0.2.4 \
-    --hash=sha256:ccbc7c6c61b25994e87474d78c48549e9fbc98c2cc04314b50b80ba1f40fd521 \
-    --hash=sha256:eccfccd1503f50384de3f6526bd780ca02107cb440a666b2c1ab978d99c7db5e
+aio-api-github==0.2.5 \
+    --hash=sha256:301a357209831ac2bc0fb5c79f8b8795a5363da5cabc2229f10155bdb6d42f5d \
+    --hash=sha256:3532d0892e875e8bb6b188c0beba4e8bac9d5147e249ce987bb2beef1e7b711e
     # via
     #   -r requirements.in
     #   envoy-base-utils
