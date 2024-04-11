@@ -1,1 +1,1 @@
-FROM redis@sha256:b0bdc1a83caf43f9eb74afca0fcfd6f09bea38bb87f6add4a858f06ef4617538
+FROM redis@sha256:8e2e57f7179377c2de691dbba392a753ea67e45b8c958578ea3b0bfd646b5b7c
