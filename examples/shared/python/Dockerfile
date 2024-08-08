@@ -1,4 +1,4 @@
-FROM python:3.11.4-slim-bullseye@sha256:52c7a54aa5e5068ce76edaf3f8652a64fb99e378fb89fb0bfbe21a8756d0013c as python-base
+FROM python:3.12.5-slim-bullseye@sha256:124632e700999f78d06ae9acbedfd82a4ae3644a02d8079ecdad2cf63fa4a25f as python-base
 RUN rm -f /etc/apt/apt.conf.d/docker-clean \
     && echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' | tee /etc/apt/apt.conf.d/keep-cache
 ARG PYTHON_REQUIREMENTS_FILE=aiohttp/requirements.txt
