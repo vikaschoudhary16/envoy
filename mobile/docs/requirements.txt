@@ -884,9 +884,9 @@ sphinxext-rediraffe==0.2.7 \
     # via
     #   -r requirements.in
     #   envoy-docs-sphinx-runner
-trycast==1.0.0 \
-    --hash=sha256:72dd9be7553337cfba04809646dc144ddd6e3a54f4213ab8b76a14b4a1882e04 \
-    --hash=sha256:93fcbb922ef3a22c587f636ed8c128266bb2615171983dbf2f7edd3ae86afb10
+trycast==1.2.0 \
+    --hash=sha256:5cece718b5a34378df8577f3b3aa515479611c9a37b4685d4d5aa4e6c1b4b20f \
+    --hash=sha256:827a84f702d8a6e7b43bb7ba5e4cccd81b3fb7e59c9b2417e718407781e317a7
     # via
     #   -r requirements.in
     #   aio-core
