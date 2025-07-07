@@ -12,15 +12,15 @@ abstracts==0.0.12 \
     #   aio-core
     #   aio-run-runner
     #   envoy-base-utils
-aio-api-github==0.2.4 \
-    --hash=sha256:ccbc7c6c61b25994e87474d78c48549e9fbc98c2cc04314b50b80ba1f40fd521 \
-    --hash=sha256:eccfccd1503f50384de3f6526bd780ca02107cb440a666b2c1ab978d99c7db5e
+aio-api-github==0.2.10 \
+    --hash=sha256:2563ad2cd219352a7933b78190c17ab460b503b437bec348a738c0f804adf45f \
+    --hash=sha256:75e17073e9e03386d719d1af355f599c16d68345992eaa97aebfa6159b07ad02
     # via
     #   -r requirements.in
     #   envoy-base-utils
-aio-core==0.10.0 \
-    --hash=sha256:57e2d8dd8ee8779b0ebc2e2447492c0db8d7ed782e9ad1bb2662593740751acb \
-    --hash=sha256:cb00d530b1e16228b36174c23d446c66e3f2a50ef91aa527c0e58a654316f635
+aio-core==0.10.5 \
+    --hash=sha256:ba512132df47514a15930b89835ba1ef13522b7e31ec83a3b0622b7431f3f42e \
+    --hash=sha256:d8486a0115ade8e0362783b8e7cd988368766d0d911c62cb73b716bfe1f50a92
     # via
     #   -r requirements.in
     #   aio-api-github
@@ -891,6 +891,18 @@ trycast==1.0.0 \
     #   -r requirements.in
     #   aio-core
     #   envoy-base-utils
+types-orjson==3.6.2 \
+    --hash=sha256:22ee9a79236b6b0bfb35a0684eded62ad930a88a56797fa3c449b026cf7dbfe4 \
+    --hash=sha256:cf9afcc79a86325c7aff251790338109ed6f6b1bab09d2d4262dd18c85a3c638
+    # via aio-core
+types-pytz==2025.2.0.20250516 \
+    --hash=sha256:e0e0c8a57e2791c19f718ed99ab2ba623856b11620cb6b637e5f62ce285a7451 \
+    --hash=sha256:e1216306f8c0d5da6dafd6492e72eb080c9a166171fa80dd7a1990fd8be7a7b3
+    # via aio-core
+types-pyyaml==6.0.12.20250516 \
+    --hash=sha256:8478208feaeb53a34cb5d970c56a7cd76b72659442e733e268a94dc72b2d0530 \
+    --hash=sha256:9f21a70216fc0fa1b216a8176db5f9e0af6eb35d2f2932acb87689d03a5bf6ba
+    # via aio-core
 uritemplate==4.1.1 \
     --hash=sha256:4346edfc5c3b79f694bccd6d6099a322bbeb628dbf2cd86eea55a456ce5124f0 \
     --hash=sha256:830c08b8d99bdd312ea4ead05994a38e8936266f84b9a7878232db50b044e02e
