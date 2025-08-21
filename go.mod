@@ -1,5 +1,5 @@
 module github.com/envoyproxy/envoy
 
-go 1.18
+go 1.23
 
-require google.golang.org/protobuf v1.31.0
+require google.golang.org/protobuf v1.36.8
